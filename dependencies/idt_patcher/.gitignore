@@ -1,0 +1,11 @@
+#ignore compiled files
+*.o
+*.ko
+
+#ignore modules files
+*.d
+*.mod
+*.mod.c
+*.cmd
+*.order
+*.symvers
