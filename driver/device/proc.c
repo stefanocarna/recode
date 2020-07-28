@@ -4,6 +4,7 @@
 #include <linux/seq_file.h>
 #include <linux/sched/task.h>
 #include <linux/pid.h>
+#include <linux/percpu-defs.h>
 
 #include "dependencies.h"
 #include "../recode_core.h"
@@ -564,6 +565,111 @@ struct file_operations processes_proc_fops = {
 // 		    &processes_proc_fops);
 // }
 
+
+
+static void *cpu_logger_seq_start(struct seq_file *m, loff_t *pos)
+{
+	unsigned *i;
+	struct pmc_logger *data;
+
+	data = (struct pmc_logger *)PDE_DATA(file_inode(m->file));
+	if (!data) goto err;
+
+	if (*pos >= data->length)
+		goto err;
+
+	i = vmalloc(sizeof(unsigned));
+	*i = *pos; 
+
+	return i;
+err:
+	return NULL;
+}
+
+static void *cpu_logger_seq_next(struct seq_file *m, void *v, loff_t *pos)
+{
+	unsigned *i;
+	struct pmc_logger *data;
+	data = (struct pmc_logger *)PDE_DATA(file_inode(m->file));
+	i = (unsigned *)v;
+
+	if (*pos >= data->length || *i >= data->length)
+		goto err;
+
+	(*i)++;
+
+	return i;
+err:
+	return NULL;
+}
+
+static int cpu_logger_seq_show(struct seq_file *m, void *v)
+{
+	unsigned *i;
+	struct pmc_logger *data;
+	struct pmc_snapshot ps;
+	data = (struct pmc_logger *)PDE_DATA(file_inode(m->file));
+	i = (unsigned *)v;
+
+	if (*i >= data->length)
+		goto err;
+
+	ps = data->buff[*i];
+
+	// data->cpu, to get cpu number
+	//	      pid | tsc	|	fixed	  |			general 		 |usr|prof|
+	seq_printf(m, "%u\t%llu\t%llu\t%llu\t%llu\t%llu\t%llu\t%llu\t%llu\t%llu\t%llu\t%llu\t%llu\t%u\t%u\n",
+		ps.pid & ~(3U << 30), ps.tsc, ps.fixed0, ps.fixed1, ps.fixed2,
+		ps.pmc0, ps.pmc1, ps.pmc2, ps.pmc3,
+		ps.pmc4, ps.pmc5, ps.pmc6, ps.pmc7,
+		!!(ps.pid & BIT(31)), !!(ps.pid & BIT(30)));
+
+	return 0;
+err:
+	return -1;
+}
+
+static void cpu_logger_seq_stop(struct seq_file *m, void *v)
+{
+	/* Nothing to free */
+}
+
+static struct seq_operations cpu_logger_seq_ops = {
+	.start = cpu_logger_seq_start,
+	.next = cpu_logger_seq_next,
+	.stop = cpu_logger_seq_stop,
+	.show = cpu_logger_seq_show
+};
+
+static int cpu_logger_open(struct inode *inode, struct  file *filp)
+{
+	return seq_open(filp, &cpu_logger_seq_ops);
+}
+
+struct file_operations cpu_logger_proc_fops = {
+	.open = cpu_logger_open,
+	.llseek = seq_lseek,
+	.read = seq_read,
+	.release = seq_release,
+};
+
+void register_cpu_proc(void)
+{
+	unsigned cpu;
+	char name[17];
+	struct proc_dir_entry *dir;
+
+	dir = proc_mkdir("cpus", root_pd_dir);
+
+	for_each_online_cpu(cpu) {
+		sprintf(name, "cpu%u", cpu);
+
+		/* memory leak when releasing */
+		proc_create_data(name, 0444, dir,
+			&cpu_logger_proc_fops, per_cpu(pcpu_pmc_logger, cpu));
+	}
+}
+
 void init_dynamic_proc(void)
 {
 	root_pd_dir = proc_mkdir("recode", NULL);
@@ -579,6 +685,8 @@ void init_dynamic_proc(void)
 
 	proc_create("recode/processes", 0222, NULL,
 		    &processes_proc_fops);
+
+	register_cpu_proc();
 
 }
 
