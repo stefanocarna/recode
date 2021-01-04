@@ -1,7 +1,7 @@
 export MODULE_NAME = recode
 export KROOT = /lib/modules/$(shell uname -r)/build
 
-INCLUDES = -I$(src)/../include -I$(src)/idt
+INCLUDES = -I$(src)/../include -I$(src)/driver/device
 # ccflags-y := $(INCLUDE_DIR)
 
 EXTRA_CFLAGS =	-std=gnu99					\
@@ -11,15 +11,27 @@ EXTRA_CFLAGS =	-std=gnu99					\
 		-Wno-declaration-after-statement		\
 		$(INCLUDES)
 
+$(MODULE_NAME)-y := recode_config.o
+$(MODULE_NAME)-y += recode_core.o
+$(MODULE_NAME)-y += recode_irq.o
+$(MODULE_NAME)-y += recode_logger.o
+$(MODULE_NAME)-y += recode_module.o
+$(MODULE_NAME)-y += recode_pmu.o
+
+$(MODULE_NAME)-y += device/proc.o
+$(MODULE_NAME)-y += device/proc_cpus.o
+$(MODULE_NAME)-y += device/proc_events.o
+$(MODULE_NAME)-y += device/proc_frequency.o
+$(MODULE_NAME)-y += device/proc_processes.o
+$(MODULE_NAME)-y += device/proc_state.o
+$(MODULE_NAME)-y += device/proc_thresholds.o
+
 obj-m := $(MODULE_NAME).o
 
-$(MODULE_NAME)-objs := recode_module.o
-$(MODULE_NAME)-objs += recode_core.o
-$(MODULE_NAME)-objs += device/proc.o
-# $(MODULE_NAME)-objs += intel/pmu.o intel/pmi.o intel/pebs.o
+# $(MODULE_NAME)-y += intel/pmu.o intel/pmi.o intel/pebs.o
 # ccflags-y := -I../include
 
-# $(MODULE_NAME)-objs += haap_fops.o
+# $(MODULE_NAME)-y += haap_fops.o
 
 # EXTRA_CFLAGS=-I$(PWD)/../include
 
@@ -34,7 +46,7 @@ clean:
 	@$(MAKE) -C $(KROOT) M=$(PWD) clean
 	rm -rf   Module.symvers modules.order
 
-insert: modules
+insert:
 	sudo insmod $(MODULE_NAME).ko
 
 remove:

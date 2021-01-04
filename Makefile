@@ -15,7 +15,7 @@ clean:
 	@$(MAKE) -C $(KROOT) M=$(PWD) clean
 	rm -rf   Module.symvers modules.order
 
-insert: modules
+insert:
 # 	sudo insmod $(addsuffix *.ko,$(wildcard $(MODULES)))
 # 	@echo $(addsuffix *.ko,$(wildcard $(MODULES)))
 # 	sudo insmod $(MODULE_NAME).ko
@@ -29,4 +29,4 @@ remove:
 #	sudo rmmod idt_patcher
 # 	sudo rmmod $(patsubst %.ko,%,$(addsuffix *.ko,$(wildcard $(MODULES))))
 
-# reboot: clean insert
+reboot: remove insert

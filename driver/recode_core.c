@@ -1,47 +1,59 @@
 
+#include <asm/ptrace.h>
+#include <asm/fast_irq.h>
 #include <asm/msr.h>
+
 #include <linux/sched.h>
-#include <linux/pmc_dynamic.h>
 #include <linux/percpu-defs.h>
+#include <linux/slab.h>
+#include <linux/string.h>
+#include <linux/stringhash.h>
 
 #include "dependencies.h"
 #include "device/proc.h"
-#include "recode_core.h"
+#include "recode.h"
 
-#define BUFF_SIZE	PAGE_SIZE * 48
-#define BUFF_LENGTH	((BUFF_SIZE) / sizeof(struct pmc_snapshot))
+DEFINE_PER_CPU(struct pmcs_snapshot, pcpu_pmcs_snapshot) = { 0 };
+DEFINE_PER_CPU(bool, pcpu_last_ctx_snapshot) = false;
 
-#define TAKE_FX_SNAPSHOT(pmc)	this_cpu_write(pcpu_pmc_snapshot_out.pmc, ctx_snap->pmc);
-#define COMPUTE_DELTA(pmc)	delta_snap->pmc = ctx_snap->pmc - this_cpu_read(pcpu_pmc_snapshot_out.pmc)
-#define ADD_DELTA(pmc)		prev->pmc_user->pmc += delta_snap->pmc
-#define COMPUTE_DATA(pmc)	prev->pmc_user->pmc += ctx_snap->pmc - this_cpu_read(pcpu_pmc_snapshot_out.pmc)
+atomic_t active_pmis;
 
-#define FULL_PMC_ACTION(a)	a(fixed0); 	\
-				a(fixed1); 	\
-				a(fixed2); 	\
-				a(pmc0);  	\
-				a(pmc1);  	\
-				a(pmc2);  	\
-				a(pmc3);  	\
-				a(pmc4);  	\
-				a(pmc5);  	\
-				a(pmc6);  	\
-				a(pmc7)  	
-				
-DEFINE_PER_CPU(struct pmc_snapshot, pcpu_pmc_snapshot_ctx);
+enum recode_state __read_mostly recode_state = OFF;
+
+#define NR_THRESHOLDS 5
+/* The last value is the number of samples while tuning the system */
+u64 thresholds[NR_THRESHOLDS + 1] = { 900, 800, 600, 100, 10, 0 };
+
+#define DEFAULT_TS_PRECISION 1000
+
+unsigned ts_precision = DEFAULT_TS_PRECISION;
+unsigned ts_precision_5m = DEFAULT_TS_PRECISION + (DEFAULT_TS_PRECISION * 0.05);
+unsigned ts_precision_5l = DEFAULT_TS_PRECISION - (DEFAULT_TS_PRECISION * 0.05);
+unsigned ts_window = 10;
+unsigned ts_alpha = 1;
+unsigned ts_beta = 1;
+
+struct pmc_evt_sel pmc_cfgs[8];
+
+DEFINE_PER_CPU(struct pmcs_snapshot, pcpu_pmc_snapshot_ctx);
 DEFINE_PER_CPU(struct pmc_logger *, pcpu_pmc_logger);
+DEFINE_PER_CPU(u64, pcpu_counter);
+
+// static bool sampling_enabled = false;
+// static bool ais_buffer_full = false;
 
 int recode_data_init(void)
 {
 	unsigned cpu;
 
-	for_each_online_cpu(cpu) {
-		per_cpu(pcpu_pmc_logger, cpu) = vmalloc(sizeof(struct pmc_logger) + (BUFF_LENGTH * sizeof(struct pmc_snapshot)));
-		if (!per_cpu(pcpu_pmc_logger, cpu)) 
+	for_each_online_cpu (cpu) {
+		per_cpu(pcpu_pmc_logger, cpu) = init_logger(cpu);
+		if (!per_cpu(pcpu_pmc_logger, cpu))
 			goto mem_err;
-		per_cpu(pcpu_pmc_logger, cpu)->idx = 0;
-		per_cpu(pcpu_pmc_logger, cpu)->length = BUFF_LENGTH;
-		per_cpu(pcpu_pmc_logger, cpu)->cpu = cpu;
+		per_cpu(pcpu_pmcs_active, cpu) = false;
+		per_cpu(pcpu_counter, cpu) = 0;
+		per_cpu(pcpu_pmcs_snapshot.fixed[1], cpu) =
+			PMC_TRIM(reset_period);
 	}
 
 	return 0;
@@ -54,400 +66,252 @@ void recode_data_fini(void)
 {
 	unsigned cpu;
 
-	for_each_online_cpu(cpu)
-		vfree(per_cpu(pcpu_pmc_logger, cpu));
-}
-
-
-static void pcpu_disable_pmc(void *dummy)
-{
-	wrmsrl(MSR_CORE_PERF_GLOBAL_CTRL, 0ULL);
-}
-
-static void pcpu_enable_pmc(void *dummy)
-{
-	wrmsrl(MSR_CORE_PERF_GLOBAL_CTRL, 0xFFULL | BIT(32) | BIT(33) | BIT(34));
-}
-
-static void pcpu_setup_pmc(void *new_cfgs)
-{
-	unsigned k;
-	struct pmc_cfg *cfgs = (struct pmc_cfg *) new_cfgs;
-
-	wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, 0x333);
-
-	for (k = 0; k < MAX_ID_PMC; ++k) {
-		wrmsrl(MSR_CORE_PERFEVTSEL(k), cfgs[k].perf_evt_sel);
-		pd_write_pmc(k, 0ULL);
+	for_each_online_cpu (cpu) {
+		fini_logger(per_cpu(pcpu_pmc_logger, cpu));
 	}
 }
 
+void recode_pmc_configure(pmc_evt_code *codes)
+{
+	unsigned k;
 
+	for (k = 0; k < max_pmc_general; ++k) {
+		pmc_cfgs[k].perf_evt_sel =
+			((u16)codes[k]) | ((codes[k] << 8) & 0xFF000000);
+		/* PMCs setup */
+		pmc_cfgs[k].usr = 1;
+		pmc_cfgs[k].os = 0;
+		pmc_cfgs[k].pmi = 0;
+		pmc_cfgs[k].en = 1;
 
-// ['inst_retired.any', 'cycles', 'cycle_activity.stalls_mem_any', 'cycle_activity.stalls_total',
-//               'cycle_activity.stalls_l3_miss', 'exe_activity.bound_on_stores',
-//               'cycle_activity.stalls_l1d_miss', 'cycle_activity.stalls_l2_miss']
-
-
-// t1_event_list_ext = ['uops_retired.retire_slots', 'idq_uops_not_delivered.core',
-//                      'uops_issued.any', 'int_misc.recovery_cycles_any']
-
-
-#define evt_umask_cmask(e, u, c)	(0ULL | e | (u << 8) | (c << 24))
-
-#define evt_ca_stalls_mem_any		evt_umask_cmask(0xa3, 0x10, 16)
-#define evt_ca_stalls_total		evt_umask_cmask(0xa3, 0x04, 4)
-#define evt_ca_stalls_l3_miss		evt_umask_cmask(0xa3, 0x06, 6)
-#define evt_ca_stalls_l2_miss		evt_umask_cmask(0xa3, 0x05, 5)
-#define evt_ca_stalls_l1d_miss		evt_umask_cmask(0xa3, 0x0c, 12)
-#define evt_ea_bound_on_stores		evt_umask_cmask(0xa6, 0x40, 0)
-
-#define evt_ur_retire_slots		evt_umask_cmask(0xc2, 0x02, 0)
-#define evt_iund_core			evt_umask_cmask(0x9c, 0x01, 0)
-#define evt_ui_any			evt_umask_cmask(0x0e, 0x01, 0)
-#define evt_im_recovery_cycles_any	evt_umask_cmask(0x0d, 0x01, 0)
-
-// Level 2
-#define evt_loads_all			evt_umask_cmask(0xd0, 0x81, 0)
-#define evt_stores_all			evt_umask_cmask(0xd0, 0x82, 0)
-
-// Not used
-#define evt_l1_hit			evt_umask_cmask(0xd1, 0x01, 0)
-
-#define evt_l2_hit			evt_umask_cmask(0xd1, 0x02, 0)
-#define evt_l2_miss			evt_umask_cmask(0xd1, 0x10, 0)
-
-#define evt_l3_hit			evt_umask_cmask(0xd1, 0x04, 0)
-#define evt_l3_miss			evt_umask_cmask(0xd1, 0x20, 0)
-
-#define evt_l3h_xsnp_miss		evt_umask_cmask(0xd2, 0x01, 0)
-#define evt_l3h_xsnp_hit		evt_umask_cmask(0xd2, 0x02, 0)
-#define evt_l3h_xsnp_hitm		evt_umask_cmask(0xd2, 0x04, 0)
-#define evt_l3h_xsnp_none		evt_umask_cmask(0xd2, 0x08, 0)
-
-#define evt_llc_reference		evt_umask_cmask(0x2e, 0x4f, 0)
-#define evt_llc_misses			evt_umask_cmask(0x2e, 0x41, 0)
-
-/* L2 Events */
-
-#define evt_l2_reference		evt_umask_cmask(0x24, 0xef, 0)	// Undercounts
-#define evt_l2_misses			evt_umask_cmask(0x24, 0x3f, 0)	
-
-#define evt_l2_all_rfo			evt_umask_cmask(0x24, 0xe2, 0)
-#define evt_l2_rfo_misses		evt_umask_cmask(0x24, 0x22, 0)
-
-#define evt_l2_all_data			evt_umask_cmask(0x24, 0xe1, 0)
-#define evt_l2_data_misses		evt_umask_cmask(0x24, 0x21, 0)
-
-#define evt_l2_all_code			evt_umask_cmask(0x24, 0xe4, 0)
-#define evt_l2_code_misses		evt_umask_cmask(0x24, 0x24, 0)
-
-#define evt_l2_all_pre			evt_umask_cmask(0x24, 0xf8, 0)
-#define evt_l2_pre_misses		evt_umask_cmask(0x24, 0x38, 0)
-
-#define evt_l2_all_demand		evt_umask_cmask(0x24, 0xe7, 0)
-#define evt_l2_demand_misses		evt_umask_cmask(0x24, 0x27, 0)
-
-#define evt_l2_wb			evt_umask_cmask(0xf0, 0x40, 0)
-#define evt_l2_in_all			evt_umask_cmask(0xf1, 0x07, 0)
-
-#define evt_l2_out_silent		evt_umask_cmask(0xf2, 0x01, 0)
-#define evt_l2_out_non_silent		evt_umask_cmask(0xf2, 0x02, 0)
-#define evt_l2_out_useless		evt_umask_cmask(0xf2, 0x04, 0)
-
-
-#define LEVEL1
-
-#ifdef LEVEL1
-static u64 pmc_events[MAX_ID_PMC] = {
-	evt_ur_retire_slots,
-	evt_iund_core,
-	// evt_ui_any,			// Bad_Spec
-	// evt_im_recovery_cycles_any,  // Bad Spec
-	evt_ca_stalls_total,		// Spot
-	evt_ca_stalls_l3_miss,		// L3 and DRAM Bound
-	evt_ca_stalls_mem_any,
-	evt_ea_bound_on_stores,
-	evt_ca_stalls_l2_miss,
-	evt_ca_stalls_l1d_miss
-};
-#endif
-#ifdef LEVEL2
-static u64 pmc_events[MAX_ID_PMC] = {
-	// evt_stores_all,
-	// evt_loads_all,
-	// evt_l3_miss,			// L3 and DRAM Bound
-	// evt_l1_hit,
-	// evt_l2_hit,
-	// evt_l3_hit,
-	// evt_l3_miss,			// L3 and DRAM Bound
-	// evt_l3h_xsnp_hit,
-	// evt_l3h_xsnp_miss,
-
-	// evt_l3h_xsnp_hitm,		// Spot
-
-	// evt_llc_reference,
-	// evt_llc_misses,
-
-	// evt_l2_reference,
-	// evt_l2_all_demand,
-	// evt_l2_all_data,
-	// evt_l2_all_code,
-	// evt_l2_all_rfo,
-	// evt_l2_all_pre,
-
-	/* MISSES */
-	// evt_l2_misses,
-	// evt_l2_demand_misses,
-	// evt_l2_rfo_misses,
-	// evt_l2_data_misses,
-	// evt_l2_code_misses,
-	// evt_l2_pre_misses
-	// evt_l2_all_pre,
-
-	// evt_l2_in_all,
-	// evt_l2_wb,
-	// evt_l2_out_silent,
-	// evt_l2_out_non_silent,
-	// evt_l2_out_useless,
-	// evt_l2_pre_misses,
-
-
-	// evt_l2_all_demand,
-	// evt_l2_demand_misses,
-	// evt_stores_all
-	
-	// evt_l2_misses,
-	// evt_l2_all_pre,
-
-	// evt_l2_wb,
-	// evt_l2_out_silent,
-	// evt_l2_out_non_silent,
-	// evt_l2_out_useless,
-	// evt_l2_in_all,
-	// evt_l2_pre_misses
-};
-#endif
-
-	// evt_l2_misses,
-	// evt_l2_all_pre,
-
-	// evt_l2_wb,
-	// evt_l2_out_silent,
-	// evt_l2_out_non_silent,
-	// evt_l2_out_useless,
-	// evt_l2_in_all,
-	// evt_l2_pre_misses
+		pr_info("recode_pmc_init %llx\n", pmc_cfgs[k].perf_evt_sel);
+	}
+}
 
 int recode_pmc_init(void)
 {
-	unsigned k;
-	struct pmc_cfg cfgs[MAX_ID_PMC];
+	int irq = 0;
+	/* Setup fast IRQ */
+	irq = request_fast_irq(RECODE_PMI, pmi_recode);
 
-	on_each_cpu(pcpu_disable_pmc, NULL, 1);
+	if (irq != RECODE_PMI)
+		return -1;
 
-	for (k = 0; k < MAX_ID_PMC; ++k) {
-		cfgs[k].perf_evt_sel = pmc_events[k];
-		/* PMCs setup */
-		cfgs[k].usr = 1;
-		cfgs[k].os = 1;
-		cfgs[k].pmi = 0;
-		cfgs[k].en = 1;
+	/* READ MACHINE CONFIGURATION */
+	get_machine_configuration();
 
-		pr_info("recode_pmc_init %llx\n", cfgs[k].perf_evt_sel);
-	}
+	recode_pmc_configure(pmc_events_sc_detection);
 
-	on_each_cpu(pcpu_setup_pmc, cfgs, 1);
-
-	// on_each_cpu(pcpu_enable_pmc, NULL, 1);
+	/* Enable Recode */
+	recode_state = OFF;
 
 	return 0;
 }
 
-// TODO Implement
-void recode_pmc_test(void)
-{
-	unsigned long flags = 0;
-	u64 msr = 0, msr2 = 0, j = 0, time = 0, size = 0;
-	u64 *r;
-	struct pmc_cfg cfgs[2];
-	unsigned i = 0, g = 0;
-	unsigned k = 0;
-	struct pmc_logger *logger;
-	unsigned cpu = get_cpu();
-	u64 offcore1 = 0ULL;
-
-	local_irq_save(flags);
-
-	logger = this_cpu_read(pcpu_pmc_logger);
-	
-	pr_info("Running on CPU %u", cpu);
-
-	// Program PMC
-	// cfgs[k].perf_evt_sel = evt_umask_cmask(0xc2, 0x02, 0);
-	cfgs[k].perf_evt_sel = evt_umask_cmask(0xb0, 0x01, 0);
-	/* PMCs setup */
-	cfgs[k].usr = 1;
-	cfgs[k].os = 1;
-	cfgs[k].pmi = 0;
-	cfgs[k].en = 1;
-
-	wrmsrl(MSR_CORE_PERFEVTSEL(k), cfgs[k].perf_evt_sel);
-	pd_write_pmc(k, 0ULL);
-
-	++k;
-
-	cfgs[k].perf_evt_sel = evt_umask_cmask(0xb0, 0x10, 0);
-	// cfgs[k].perf_evt_sel = evt_umask_cmask(0xb0, 0x01, 0);
-	/* PMCs setup */
-	cfgs[k].usr = 1;
-	cfgs[k].os = 1;
-	cfgs[k].pmi = 0;
-	cfgs[k].en = 1;
-
-	wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, 0x333);
-
-	wrmsrl(MSR_CORE_PERFEVTSEL(k), cfgs[k].perf_evt_sel);
-	pd_write_pmc(k, 0ULL);
-
-	offcore1 |= BIT_ULL(0) | BIT_ULL(2) | BIT_ULL(16); 
-
-
-	wrmsrl(0x1a6, offcore1);
-	r = vmalloc(PAGE_SIZE * 1024 * 4);
-
-	size = (PAGE_SIZE * 1024 * 4) / sizeof(u64);
-	pd_read_fixed_pmc(1, time);
-	pcpu_enable_pmc(NULL);
-	barrier();
-
-
-	r[12134] = 33;
-
-	r[12134 + 734] = 17;
-
-
-	for (g = 0; g < 1 ; ++g) {
-		for (i = 0; i < size - 30 ; ++i) {
-			// j += (u64) (logger + i) - (u64) (logger);
-			j += r[i + 23];
-		}
-	}
-
-	barrier();
-	pcpu_disable_pmc(NULL);
-	pd_read_fixed_pmc(1, msr);
-
-	time = msr - time;
-
-	pd_read_pmc(0, msr);
-	pd_read_pmc(1, msr2);
-
-	pr_info("[%llu]Got value: %llu - %llu and result %llu (%u)", time, msr, msr2, j, i);
-
-	local_irq_restore(flags);
-	put_cpu();
-}
-
 void recode_pmc_fini(void)
 {
-	/* Nothing to do */
+	/* Disable Recode */
+	recode_state = OFF;
+
+	disable_pmc_on_system();
+
+	/* Wait for all PMIs to be completed */
+	while (atomic_read(&active_pmis))
+		;
+
+	free_fast_irq(RECODE_PMI);
 }
 
-static bool sampling_enabled = false;
+void tuning_finish_callback(void *dummy)
+{
+	unsigned k;
+
+	// recode_set_state(OFF);
+
+	pr_warn("Tuning finished\n");
+	pr_warn("Got %u samples\n", thresholds[NR_THRESHOLDS]);
+	pr_warn("Reset period %llx\n", PMC_TRIM(~reset_period));
+
+	for (k = 0; k < NR_THRESHOLDS; ++k) {
+		u64 backup = thresholds[k];
+		thresholds[k] /= thresholds[NR_THRESHOLDS];
+		pr_warn("TS[%u]: %llu/%u (%llu)\n", k, thresholds[k],
+			ts_precision, backup);
+	}
+
+	pr_warn("Tuning finished\n");
+}
+
+static void recode_reset_data(void)
+{
+	unsigned cpu;
+	unsigned pmc;
+
+	for_each_online_cpu (cpu) {
+		reset_logger(per_cpu(pcpu_pmc_logger, cpu));
+		per_cpu(pcpu_counter, cpu) = 0;
+
+		for (pmc = 0; pmc < max_pmc_fixed; ++pmc)
+			per_cpu(pcpu_pmcs_snapshot.fixed[pmc], cpu) = 0;
+
+		per_cpu(pcpu_pmcs_snapshot.fixed[1], cpu) =
+			PMC_TRIM(reset_period);
+
+		for (pmc = 0; pmc < max_pmc_general; ++pmc)
+			per_cpu(pcpu_pmcs_snapshot.general[pmc], cpu) = 0;
+	}
+}
+
+void recode_set_state(unsigned state)
+{
+	enum recode_state old_state = recode_state;
+	recode_state = state;
+
+	if (old_state == recode_state)
+		return;
+
+	if (state == OFF && old_state != OFF) {
+		disable_pmc_on_system();
+		pr_info("Recode state: OFF\n");
+	} else if (state == TUNING) {
+		/* Requires binding to one cpu */
+		/* Set threshold mode and activate PROFILE */
+		unsigned k = NR_THRESHOLDS + 1;
+		while (k--) {
+			thresholds[k] = 0;
+		}
+		set_exit_callback(tuning_finish_callback);
+		pr_warn("Recode ready for TUNING\n");
+	} else if (state == PROFILE) {
+		/* Reset DATA and set PROFILE mode */
+		recode_reset_data();
+		set_exit_callback(NULL);
+		pr_info("Recode ready for PROFILE\n");
+	} else if (state == SYSTEM) {
+		/* Reset DATA and set SYSTEM mode */
+		recode_reset_data();
+	} else {
+		pr_warn("Recode invalid state\n");
+		recode_state = old_state;
+		return;
+	}
+
+	setup_pmc_on_system(pmc_cfgs);
+}
 
 static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 {
-	int cpu = get_cpu();
-	unsigned buff_idx;
-	struct pmc_snapshot *ctx_snap;
-	struct pmc_snapshot *delta_snap;
-	struct pmc_logger *logger;
-
-	u64 debug = 0;
-
-	ctx_snap = this_cpu_ptr(&pcpu_pmc_snapshot_ctx);
-
-	pcpu_disable_pmc(NULL);
-
-	/* Crate a PMC snapshot */
-	pd_read_fixed_pmc(0, ctx_snap->fixed0);
-	pd_read_fixed_pmc(1, ctx_snap->fixed1);
-	pd_read_fixed_pmc(2, ctx_snap->fixed2);
-	pd_read_pmc(0, ctx_snap->pmc0);
-	pd_read_pmc(1, ctx_snap->pmc1);
-	pd_read_pmc(2, ctx_snap->pmc2);
-	pd_read_pmc(3, ctx_snap->pmc3);
-	pd_read_pmc(4, ctx_snap->pmc4);
-	pd_read_pmc(5, ctx_snap->pmc5);
-	pd_read_pmc(6, ctx_snap->pmc6);
-	pd_read_pmc(7, ctx_snap->pmc7);
-
-	pcpu_enable_pmc(NULL);
-
-	debug = prev->pmc_user->fixed2;
-
-	logger = this_cpu_read(pcpu_pmc_logger);
-	buff_idx = logger->idx;
-	// /* Log sample */
-	if (buff_idx < BUFF_LENGTH && sampling_enabled) {
-		delta_snap = logger->buff + buff_idx;
-
-		/* We can spend ~10 more cycles */
-		delta_snap->tsc = rdtsc_ordered();
-		delta_snap->pid = prev->pid;
-		
-		if (prev->mm)
-			delta_snap->pid |= BIT(31);
-
-		if (prev_on)
-			delta_snap->pid |= BIT(30);
-
-		FULL_PMC_ACTION(COMPUTE_DELTA);
-
-		FULL_PMC_ACTION(ADD_DELTA);
-		
-		logger->idx = buff_idx + 1;
-		if (buff_idx == BUFF_LENGTH - 1) {
-			pr_info("[Core %u] PMC_BUFFER SPACE USED UP\n", cpu);
-		} else if (!(buff_idx % 1000)) {
-			pr_info("[Core %u] PMC_BUFFER REACHED POS %u\n", cpu, buff_idx);
-		}
+	if (recode_state == SYSTEM) {
+		/* Need to switch the PMC context */
+		// TODO
 	} else {
-		/* Compute data since last CTXT */
-		FULL_PMC_ACTION(COMPUTE_DATA);
+		/* Skip pmc-off CPUs and Kernel Threads */
+
+		/* Toggle PMI */
+		if (this_cpu_read(pcpu_pmcs_active) && !curr_on)
+			disable_pmc_on_cpu();
+
+		if (!this_cpu_read(pcpu_pmcs_active) && curr_on)
+			enable_pmc_on_cpu();
 	}
 
-	/* Prev is updated */
+	// if (!curr_on)
+	// 	disable_pmc_on_cpu();
+
+	if (this_cpu_read(pcpu_pmcs_active))
+		pmc_evaluate_activity(prev_on, true);
+}
+
+static void evaluate_pmcs(struct pmcs_snapshot *snapshot)
+{
+	if (recode_state == TUNING) {
+		thresholds[0] += DM0(ts_precision, snapshot);
+		thresholds[1] += DM1(ts_precision, snapshot);
+		thresholds[2] += DM2(ts_precision, snapshot);
+		thresholds[3] += DM3(ts_precision, snapshot);
+		// thresholds[4] += DM4(ts_precision, snapshot);
+		thresholds[NR_THRESHOLDS]++;
+
+		pr_warn("Got sample %llu\n", thresholds[0]);
+	} else if (recode_state == PROFILE) {
+		if (thresholds[0] < DM0(ts_precision_5l, snapshot) &&
+		    thresholds[1] < DM1(ts_precision_5l, snapshot) &&
+		    thresholds[2] < DM2(ts_precision_5l, snapshot) &&
+		    thresholds[3] > DM3(ts_precision_5m, snapshot) /* && */
+		    /* thresholds[4] < DM4(ts_precision, snapshot) */)
+			thresholds[NR_THRESHOLDS] += ts_alpha;
+		else
+			thresholds[NR_THRESHOLDS] -= ts_beta;
+
+		if (thresholds[NR_THRESHOLDS] < 0)
+			thresholds[NR_THRESHOLDS] = 0;
+		else if (thresholds[NR_THRESHOLDS] > ts_window)
+			pr_warn("Detected %s (PID %u)\n", current->comm,
+				current->pid);
+	}
+}
+
+void pmc_evaluate_activity(bool log, bool pmc_off)
+{
+	unsigned k;
+	unsigned cpu = get_cpu();
+	pmc_ctr old_fixed1, new_fixed1;
+
+	struct pmcs_snapshot old_pmcs;
+
+	if (pmc_off)
+		disable_pmc_on_cpu();
+
+	/* TODO - This copy is implementation-dependant */
+	memcpy(&old_pmcs, per_cpu_ptr(&pcpu_pmcs_snapshot, cpu),
+	       sizeof(struct pmcs_snapshot));
+
+	/* Read PMCs' value */
+	read_all_pmcs(per_cpu_ptr(&pcpu_pmcs_snapshot, cpu));
 
 	/* 
-	 * NEW = in.fixed2
-	 * OLD = out.fixed2
-	 * UPD = ctx.fixed2
+	 * What if a PMI occurs and the IRQs are OFF?
+	 * 
+	 * This function is executed at the end of teh context switch and in the
+	 * PMI routine. The context switch may occur while the PMC overflows and
+	 * a wrong value would be read. We need to adjust such a value with the
+	 * reset_period.
+	 * 
+	 * 1. Do we need to check if there is a pending PMI?
+	 * 2. Can we just look for and older value bigger than the new one? 
 	 */
-	// if (prev_on || curr_on) {
-	// 	pr_info("[%u, %u(%u)->%u(%u)] 
-	// 		NEWa: %llx, OLDa: %llx, SNAPn: %llx, SNAPo: %llx, UPD: %llx\n",
-	// 		cpu, prev->pid, (!!prev->mm) ? 3 : 0, current->pid, (!!current->mm) ? 3 : 0,
-	// 		prev->pmc_user->fixed2, prev->pmc_user->fixed2 - debug,
-	// 		ctx_snap->fixed2, this_cpu_read(pcpu_pmc_snapshot_out.fixed2),
-	// 		ctx_snap->fixed2 - this_cpu_read(pcpu_pmc_snapshot_out.fixed2));
-	// }
 
-	/* Update the snapshot */
-	FULL_PMC_ACTION(TAKE_FX_SNAPSHOT);
+	/* Implementing Solution 2. */
+	old_fixed1 = old_pmcs.fixed[1];
+	new_fixed1 = per_cpu(pcpu_pmcs_snapshot.fixed[1], cpu);
 
-	/* Prev is profiled */
-	if (prev_on) {
-		sampling_enabled = true;
+	for_each_pmc(k, max_pmc_fixed + max_pmc_general)
+	{
+		old_pmcs.pmcs[k] =
+			PMC_TRIM(per_cpu(pcpu_pmcs_snapshot.pmcs[k], cpu) -
+				 old_pmcs.pmcs[k]);
 	}
 
+	/* TSC is not computed and is set to "this" moment */
+	old_pmcs.tsc = per_cpu(pcpu_pmcs_snapshot.tsc, cpu);
 
-	if (curr_on) {
-		sampling_enabled = true;
+	if (old_fixed1 >= new_fixed1) {
+		old_pmcs.fixed[1] =
+			PMC_TRIM(((BIT_ULL(48) - 1) - old_fixed1) + new_fixed1);
+		this_cpu_add(pcpu_pmcs_snapshot.fixed[1],
+			     reset_period + new_fixed1);
+	} else {
+		old_pmcs.fixed[1] = new_fixed1 - old_fixed1;
 	}
 
-	// end:
+	if (log)
+		add_log(per_cpu(pcpu_pmc_logger, cpu), &old_pmcs);
+
+	evaluate_pmcs(&old_pmcs);
+
+	if (pmc_off)
+		enable_pmc_on_cpu();
+
 	put_cpu();
 }
 
@@ -456,19 +320,17 @@ int attach_process(pid_t pid)
 {
 	pr_info("Attaching pid %u\n", pid);
 
-	this_cpu_write(pcpu_track.stop, 0);
-	this_cpu_write(pcpu_track.kin0, 0);
-	this_cpu_write(pcpu_track.kin1, 0);
-	this_cpu_write(pcpu_track.kout0, 0);
-	this_cpu_write(pcpu_track.kout1, 0);
-
 	pid_register(pid);
+
+	// on_each_cpu(enable_pmc_on_cpu, NULL, 1);
+
 	return 0;
 }
 
 /* Remove registered thread from profiling activity */
 void detach_process(pid_t pid)
 {
+	// TODO
 }
 
 int register_ctx_hook(void)
