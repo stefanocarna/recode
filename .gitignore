@@ -17,6 +17,7 @@
 *.ko
 *.so
 *.so.dbg
+*.mod
 *.mod.c
 *.i
 *.lst
@@ -92,3 +93,7 @@ extra_certificates
 signing_key.priv
 signing_key.x509
 x509.genkey
+
+# other folders
+__pycache__/
+/tools/attacks
