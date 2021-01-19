@@ -90,4 +90,4 @@ pmc_evt_code pmc_events_sc_detection[8] = {
 	tlb_page_walk		/* TLB L2 Miss */
 };
 
-u64 reset_period = (~0xFFFFFFFFULL & (BIT_ULL(48) - 1));
+u64 reset_period = (~0xFFFFFFULL & (BIT_ULL(48) - 1));

@@ -3,8 +3,9 @@
 #include <asm/fast_irq.h>
 #include <asm/msr.h>
 
-#include <linux/sched.h>
+#include <linux/dynamic-mitigations.h>
 #include <linux/percpu-defs.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/stringhash.h>
@@ -22,14 +23,13 @@ enum recode_state __read_mostly recode_state = OFF;
 
 #define NR_THRESHOLDS 5
 /* The last value is the number of samples while tuning the system */
-u64 thresholds[NR_THRESHOLDS + 1] = { 900, 800, 600, 100, 10, 0 };
+s64 thresholds[NR_THRESHOLDS + 1] = { 950, 950, 0, 0, 950, 0 };
 
 #define DEFAULT_TS_PRECISION 1000
 
 unsigned ts_precision = DEFAULT_TS_PRECISION;
-unsigned ts_precision_5m = DEFAULT_TS_PRECISION + (DEFAULT_TS_PRECISION * 0.05);
-unsigned ts_precision_5l = DEFAULT_TS_PRECISION - (DEFAULT_TS_PRECISION * 0.05);
-unsigned ts_window = 10;
+unsigned ts_precision_5 = (DEFAULT_TS_PRECISION * 0.05);
+unsigned ts_window = 5;
 unsigned ts_alpha = 1;
 unsigned ts_beta = 1;
 
@@ -135,7 +135,7 @@ void tuning_finish_callback(void *dummy)
 	for (k = 0; k < NR_THRESHOLDS; ++k) {
 		u64 backup = thresholds[k];
 		thresholds[k] /= thresholds[NR_THRESHOLDS];
-		pr_warn("TS[%u]: %llu/%u (%llu)\n", k, thresholds[k],
+		pr_warn("TS[%u]: %lld/%u (%llu)\n", k, thresholds[k],
 			ts_precision, backup);
 	}
 
@@ -190,6 +190,9 @@ void recode_set_state(unsigned state)
 	} else if (state == SYSTEM) {
 		/* Reset DATA and set SYSTEM mode */
 		recode_reset_data();
+		pr_info("Recode ready for SYSTEM\n");
+	}  else if (state == IDLE) {
+		pr_info("Recode is IDLE\n");
 	} else {
 		pr_warn("Recode invalid state\n");
 		recode_state = old_state;
@@ -201,9 +204,12 @@ void recode_set_state(unsigned state)
 
 static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 {
-	if (recode_state == SYSTEM) {
-		/* Need to switch the PMC context */
-		// TODO
+	if (recode_state == SYSTEM || recode_state == IDLE) {
+		/* Just enable OMCs if theya re disabled */
+		if (!this_cpu_read(pcpu_pmcs_active))
+			enable_pmc_on_cpu();
+
+		pmc_evaluate_activity(prev, prev_on, true);
 	} else {
 		/* Skip pmc-off CPUs and Kernel Threads */
 
@@ -211,20 +217,28 @@ static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 		if (this_cpu_read(pcpu_pmcs_active) && !curr_on)
 			disable_pmc_on_cpu();
 
-		if (!this_cpu_read(pcpu_pmcs_active) && curr_on)
+		else if (!this_cpu_read(pcpu_pmcs_active) && curr_on)
 			enable_pmc_on_cpu();
+
+		if (this_cpu_read(pcpu_pmcs_active))
+			pmc_evaluate_activity(prev, prev_on, true);
 	}
 
-	// if (!curr_on)
-	// 	disable_pmc_on_cpu();
+	/* Activate on previous task */
+	if (has_pending_mitigations(prev))
+		enable_mitigations_on_task(prev);
 
-	if (this_cpu_read(pcpu_pmcs_active))
-		pmc_evaluate_activity(prev_on, true);
+	/* Enable mitigations */
+	LLC_flush(current);
+	mitigations_switch(prev, current);
 }
 
-static void evaluate_pmcs(struct pmcs_snapshot *snapshot)
+static bool evaluate_pmcs(struct task_struct *tsk,
+			  struct pmcs_snapshot *snapshot)
 {
-	if (recode_state == TUNING) {
+	if (recode_state == IDLE) {
+		/* Do nothing */
+	} else if (recode_state == TUNING) {
 		thresholds[0] += DM0(ts_precision, snapshot);
 		thresholds[1] += DM1(ts_precision, snapshot);
 		thresholds[2] += DM2(ts_precision, snapshot);
@@ -233,25 +247,54 @@ static void evaluate_pmcs(struct pmcs_snapshot *snapshot)
 		thresholds[NR_THRESHOLDS]++;
 
 		pr_warn("Got sample %llu\n", thresholds[0]);
-	} else if (recode_state == PROFILE) {
-		if (thresholds[0] < DM0(ts_precision_5l, snapshot) &&
-		    thresholds[1] < DM1(ts_precision_5l, snapshot) &&
-		    thresholds[2] < DM2(ts_precision_5l, snapshot) &&
-		    thresholds[3] > DM3(ts_precision_5m, snapshot) /* && */
-		    /* thresholds[4] < DM4(ts_precision, snapshot) */)
-			thresholds[NR_THRESHOLDS] += ts_alpha;
-		else
-			thresholds[NR_THRESHOLDS] -= ts_beta;
+	} else {
+		if (!has_mitigations(tsk)) {
+			// TODO Remove - Init task_struct
+			if (tsk->monitor_state > ts_window + 1)
+				tsk->monitor_state = 0;
 
-		if (thresholds[NR_THRESHOLDS] < 0)
-			thresholds[NR_THRESHOLDS] = 0;
-		else if (thresholds[NR_THRESHOLDS] > ts_window)
-			pr_warn("Detected %s (PID %u)\n", current->comm,
-				current->pid);
+			if ((CHECK_LESS_THAN_TS(thresholds[0],
+						DM0(ts_precision, snapshot),
+						ts_precision_5) &&
+			     CHECK_LESS_THAN_TS(thresholds[1],
+						DM1(ts_precision, snapshot),
+						ts_precision_5) &&
+			     CHECK_MORE_THAN_TS(thresholds[2],
+						DM2(ts_precision, snapshot),
+						ts_precision_5) &&
+			     CHECK_MORE_THAN_TS(thresholds[3],
+						DM3(ts_precision, snapshot),
+						ts_precision_5)) ||
+			    /* P4 */
+			    CHECK_LESS_THAN_TS(thresholds[4],
+					       DM3(ts_precision, snapshot),
+					       ts_precision_5)) {
+				tsk->monitor_state += ts_alpha;
+				pr_info("[++] %s (PID %u): %u\n", tsk->comm,
+					tsk->pid, tsk->monitor_state);
+			} else if (tsk->monitor_state > 0) {
+				tsk->monitor_state -= ts_alpha;
+				pr_info("[--] %s (PID %u): %u\n", tsk->comm,
+					tsk->pid, tsk->monitor_state);
+			}
+
+			if (tsk->monitor_state > ts_window) {
+				pr_warn("[FLAG] Detected %s (PID %u): %u\n",
+					tsk->comm, tsk->pid,
+					tsk->monitor_state);
+				pr_warn("0: %lu, 1: %lu, 2: %lu, 3/4: %lu\n",
+					DM0(ts_precision, snapshot),
+					DM1(ts_precision, snapshot),
+					DM2(ts_precision, snapshot),
+					DM3(ts_precision, snapshot));
+				return true;
+			}
+		}
 	}
+	return false;
 }
 
-void pmc_evaluate_activity(bool log, bool pmc_off)
+void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 {
 	unsigned k;
 	unsigned cpu = get_cpu();
@@ -305,9 +348,14 @@ void pmc_evaluate_activity(bool log, bool pmc_off)
 	}
 
 	if (log)
-		add_log(per_cpu(pcpu_pmc_logger, cpu), &old_pmcs);
+		log_sample(per_cpu(pcpu_pmc_logger, cpu), &old_pmcs);
 
-	evaluate_pmcs(&old_pmcs);
+	/* Skip small samples */
+	if (per_cpu(pcpu_pmcs_snapshot.fixed[1], cpu) - old_pmcs.fixed[1] > 0xFFFF)
+		if(evaluate_pmcs(tsk, &old_pmcs))
+			/* Delay activation if we are inside the PMI */
+			request_mitigations_on_task(tsk, pmc_off);
+
 
 	if (pmc_off)
 		enable_pmc_on_cpu();
@@ -321,8 +369,6 @@ int attach_process(pid_t pid)
 	pr_info("Attaching pid %u\n", pid);
 
 	pid_register(pid);
-
-	// on_each_cpu(enable_pmc_on_cpu, NULL, 1);
 
 	return 0;
 }

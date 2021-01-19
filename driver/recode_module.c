@@ -11,8 +11,6 @@ static __init int recode_init(void)
 
 	init_proc();
         register_ctx_hook();
-	recode_pmc_init();
-	recode_pmc_test();
 
 	if(recode_pmc_init())
 		goto err;

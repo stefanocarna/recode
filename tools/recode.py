@@ -4,6 +4,7 @@ from enum import IntEnum
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 # sys.path.insert(0, './utility')
 import utility.plot as plot
@@ -54,7 +55,7 @@ def parser_init():
         "--state",
         type=str,
         required=False,
-        choices=["off", "tuning", "profile", "system", "reset"],
+        choices=["off", "tuning", "profile", "system", "idle", "reset"],
         help="Set the Recode state: (on) enabled, (off) disabled, (reset) off -> on",
     )
 
@@ -120,14 +121,54 @@ def parser_init():
         help="Plot profiling data",
     )
 
-    parser.add_argument(
-        "-ta",
-        "--test-attack",
+    subparser = parser.add_subparsers(help="command")
+    test_parser = subparser.add_parser("test", help="Run tool test")
+
+    test_parser.add_argument(
+        "-m",
+        "--monitor",
+        action="store_true",
+        required=False,
+        help="Monitor the program",
+    )
+
+    test_parser.add_argument(
+        "-p",
+        "--plot",
+        action="store_true",
+        required="--monitor" in sys.argv,
+        help="Plot the monitored program samples [Requires -m]",
+    )
+
+    test_parser.add_argument(
+        "-t",
+        "--tuning",
+        action="store_true",
+        required="--monitor" in sys.argv,
+        help="Set Reocde in TUNING mode [Requires -m]",
+    )
+
+    test_parser.add_argument(
+        "-a",
+        "--attack",
         type=str,
         metavar="ATT",
-        choices=["fr1", "fr2", "fr3", "fr4", "fr5", "pp1", "pp2", "ppl1", "ppl3"],
+        choices=["fr1", "fr2", "fr3", "fr4", "fr5", "pp1", "pp2", "ppl1", "ppl3", "xa", "xp"],
         required=False,
-        help="Directly profile an attack",
+        help="Execute the attack",
+    )
+
+    conf_parser = subparser.add_parser("config", help="Configure the module")
+
+    conf_parser.add_argument(
+        "-m",
+        "--mitigations",
+        type=str,
+        nargs='+',
+        metavar="CONF",
+        choices=["te", "exile", "llc", "verbose", "none"],
+        required=False,
+        help="Configure the module",
     )
 
     return parser
@@ -177,6 +218,35 @@ def action_module(action):
             break
 
 
+def action_mitigations(action):
+    
+    path = RECODE_PROC_PATH + "/mitigations"
+
+    _file = open(path, "w")
+
+    mask = 0
+
+    #define DM_G_LLC_FLUSH			0	
+    #define DM_G_CPU_EXILE			1	
+    #define DM_G_TE_MITIGATE		2
+    #define DM_G_VERBOSE			18	
+
+    if "llc" in action:
+        mask |= (1 << 0)
+    if "exile" in action:
+        mask |= (1 << 1)
+    if "te" in action:
+        mask |= (1 << 2)
+    if "verbose" in action:
+        mask |= (1 << 18)
+    if "none" in action:
+        mask = 0
+
+    _file.write(str(mask))
+    _file.flush()
+    _file.close()
+
+
 def action_state(action):
     path = RECODE_PROC_PATH + "/state"
 
@@ -190,6 +260,8 @@ def action_state(action):
         value = "2"
     elif action == "system":
         value = "3"
+    elif action == "idle":
+        value = "4"
     elif action == "reset":
         action_state("off")
         value = "2"
@@ -238,7 +310,7 @@ def action_info():
     print(" - thresholds:\t" + get_info("thresholds"))
 
 
-def action_exec(prog, args, timeout, cpu):
+def action_exec(prog, args, timeout, cpu, profile=True):
     wrapper = "wrapper"
     if not os.path.isfile(wrapper):
         # Compile Wrapper
@@ -248,7 +320,7 @@ def action_exec(prog, args, timeout, cpu):
         print("Invalid timeout (< 0). Ignore timeout")
         timeout = None
 
-    _cmd = ["./" + wrapper]
+    _cmd = ["./" + wrapper] if profile else []
 
     if cpu is not None:
         if cpu < 0 or cpu >= os.cpu_count():
@@ -276,13 +348,20 @@ def tool_plot():
     plot.plotCpusData()
 
 
-def tool_test(test):
+def tool_test(test, tuning=False, monitor=False, plot=False):
     if test is None:
         print("Nothing to test. Specify an attack.")
         return
 
-    action_state("reset")
-    action_frequency(5)
+    if os.geteuid() != 0:
+        answer = input("Attacks should be run as root. Proceed anyway? [y/N] ")
+        if answer != "y":
+            exit(0)
+
+    if monitor:
+        action_state("off")
+        action_state("tuning" if tuning else "profile")
+        action_frequency(5)
 
     # flush_flush
     if test == "fr1":
@@ -300,7 +379,15 @@ def tool_test(test):
         args = "attacks/xlate/openssl-1.0.1e/libcrypto.so.1.0.0"
         time = 2
     if test == "pp2":
-        prog = "attacks/xlate/obj/aes-fr"
+        prog = "attacks/xlate/obj/aes-pp"
+        args = "attacks/xlate/openssl-1.0.1e/libcrypto.so.1.0.0"
+        time = 10
+    if test == "xa":
+        prog = "attacks/xlate/obj/aes-xa"
+        args = "attacks/xlate/openssl-1.0.1e/libcrypto.so.1.0.0"
+        time = 10
+    if test == "xp":
+        prog = "attacks/xlate/obj/aes-xp"
         args = "attacks/xlate/openssl-1.0.1e/libcrypto.so.1.0.0"
         time = 10
 
@@ -326,8 +413,13 @@ def tool_test(test):
         args = "20000"
         time = 5
 
-    action_exec(prog, args, time, None)
-    tool_plot()
+    if not monitor:
+        time = None
+
+    action_exec(prog, args, time, None, monitor)
+
+    if plot:
+        tool_plot()
 
 
 if __name__ == "__main__":
@@ -348,14 +440,16 @@ if __name__ == "__main__":
     if args.info:
         action_info()
 
-    if args.frequency:
-        action_frequency(args.frequency)
-
     if args.exec:
         action_exec(args.exec, args.args, args.timeout, args.cpu)
 
-    if args.test_attack:
-        tool_test(args.test_attack)
+    # print(args)
+
+    if hasattr(args, "attack"):
+        tool_test(args.attack, args.tuning, args.monitor, args.plot)
+
+    if hasattr(args, "mitigations"):
+        action_mitigations(args.mitigations)
 
     if args.plot:
         tool_plot()

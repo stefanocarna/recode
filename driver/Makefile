@@ -14,7 +14,7 @@ EXTRA_CFLAGS =	-std=gnu99					\
 $(MODULE_NAME)-y := recode_config.o
 $(MODULE_NAME)-y += recode_core.o
 $(MODULE_NAME)-y += recode_irq.o
-$(MODULE_NAME)-y += recode_logger.o
+$(MODULE_NAME)-y += recode_statistics.o
 $(MODULE_NAME)-y += recode_module.o
 $(MODULE_NAME)-y += recode_pmu.o
 
@@ -22,6 +22,7 @@ $(MODULE_NAME)-y += device/proc.o
 $(MODULE_NAME)-y += device/proc_cpus.o
 $(MODULE_NAME)-y += device/proc_events.o
 $(MODULE_NAME)-y += device/proc_frequency.o
+$(MODULE_NAME)-y += device/proc_mitigations.o
 $(MODULE_NAME)-y += device/proc_processes.o
 $(MODULE_NAME)-y += device/proc_state.o
 $(MODULE_NAME)-y += device/proc_thresholds.o

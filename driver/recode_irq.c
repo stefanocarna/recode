@@ -44,7 +44,7 @@ again:
 		goto end;
 	}
 
-	pmc_evaluate_activity(is_pid_tracked(current->tgid), false);
+	pmc_evaluate_activity(current, is_pid_tracked(current->tgid), false);
 
 	handled++;
 

@@ -30,3 +30,11 @@ struct pmc_logger {
 	unsigned length;
 	struct pmcs_snapshot buff[];
 };
+
+struct statistic {
+	u64 tsc;
+	unsigned cpu;
+	char *name;
+	// u64 last_sample;
+	struct statistic *next;
+};

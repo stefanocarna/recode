@@ -44,7 +44,7 @@ enum recode_state {
 	TUNING = 1,
 	PROFILE = 2,
 	SYSTEM = 3,
-	IDLE, // Useless
+	IDLE = 4, // Useless
 };
 
 extern enum recode_state __read_mostly recode_state;
@@ -69,12 +69,15 @@ extern void unregister_ctx_hook(void);
 extern int attach_process(pid_t pid);
 extern void detach_process(pid_t pid);
 
+/* Statistic Unit */
 extern struct pmc_logger *init_logger(unsigned cpu);
 extern void fini_logger(struct pmc_logger *logger);
 extern void reset_logger(struct pmc_logger *logger);
 
-extern int add_log(struct pmc_logger *logger, struct pmcs_snapshot *sample);
+extern int log_sample(struct pmc_logger *logger, struct pmcs_snapshot *sample);
 extern int flush_logs(struct pmc_logger *logger);
+
+extern void process_match(struct task_struct *tsk);
 
 DECLARE_PER_CPU(struct pmc_logger *, pcpu_pmc_logger);
 
@@ -83,13 +86,14 @@ DECLARE_PER_CPU(bool, pcpu_pmcs_active);
 extern pmc_evt_code pmc_events[8]; /* Ignored */
 extern pmc_evt_code pmc_events_sc_detection[8];
 
-extern void pmc_evaluate_activity(bool log, bool pmc_off);
+extern void pmc_evaluate_activity(struct task_struct *tsk, bool log,
+				  bool pmc_off);
 
 /* Recode Config */
 extern u64 reset_period;
 
 #define NR_THRESHOLDS 5
-extern u64 thresholds[NR_THRESHOLDS + 1];
+extern s64 thresholds[NR_THRESHOLDS + 1];
 
 /* Recode PMI */
 extern int pmi_recode(void);
@@ -114,5 +118,8 @@ extern void setup_pmc_on_system(struct pmc_evt_sel *pmc_cfgs);
 #define DM2(p, sn) ((sn->general[3] * p) / (sn->general[4] + 1))
 /* TLB_l2_miss / L1_miss */
 #define DM3(p, sn) ((sn->general[5] * p) / (sn->general[0] + 1))
+
+#define CHECK_LESS_THAN_TS(ts, v, p) ((ts - p) < v)
+#define CHECK_MORE_THAN_TS(ts, v, p) (v < (ts + p))
 
 #endif /* _RECODE_CORE_H */

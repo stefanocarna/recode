@@ -1,5 +1,7 @@
 #include "recode.h"
 
+DEFINE_PER_CPU(struct statistic, pcpu_statistics) = { 0 };
+
 struct pmc_logger *init_logger(unsigned cpu)
 {
         struct pmc_logger *logger;
@@ -26,7 +28,7 @@ void fini_logger(struct pmc_logger *logger)
         vfree(logger);
 }
 
-int add_log(struct pmc_logger *logger, struct pmcs_snapshot *sample)
+int log_sample(struct pmc_logger *logger, struct pmcs_snapshot *sample)
 {
         if (!logger) {
                 pr_info("Internal error, logger is NULL\n");
@@ -53,4 +55,9 @@ int flush_logs(struct pmc_logger *logger)
 {
         /* TODO IMPLEMENT */
         return 0;
+}
+
+void process_match(struct task_struct *tsk)
+{
+
 }

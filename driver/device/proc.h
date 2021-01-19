@@ -2,13 +2,14 @@
 #ifndef _PROC_H
 #define _PROC_H
 
-#include <linux/slab.h>
+#include <linux/dynamic-mitigations.h>
 #include <linux/hashtable.h>
-#include <linux/proc_fs.h>
-#include <linux/seq_file.h>
-#include <linux/sched/task.h>
-#include <linux/pid.h>
 #include <linux/percpu-defs.h>
+#include <linux/pid.h>
+#include <linux/proc_fs.h>
+#include <linux/sched/task.h>
+#include <linux/seq_file.h>
+#include <linux/slab.h>
 
 #include "dependencies.h"
 
@@ -33,6 +34,7 @@ extern void fini_proc(void);
 extern int register_proc_cpus(void);
 extern int register_proc_events(void);
 extern int register_proc_frequency(void);
+extern int register_proc_mitigations(void);
 extern int register_proc_processes(void);
 extern int register_proc_state(void);
 extern int register_proc_thresholds(void);
