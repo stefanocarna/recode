@@ -1,0 +1,3 @@
+[submodule "dependencies/shook"]
+	path = dependencies/shook
+	url = https://github.com/stefanocarna/SHook.git
