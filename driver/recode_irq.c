@@ -1,11 +1,14 @@
 #include "dependencies.h"
 #include "recode.h"
 
+// #include <asm/irq_regs.h>
+
 int pmi_recode(void)
 {
 	u64 global;
 	unsigned handled = 0, loops = 0;
 	unsigned long flags = 0;
+	// struct pt_regs *regs;
 
 	atomic_inc(&active_pmis);
 
@@ -44,6 +47,9 @@ again:
 		goto end;
 	}
 
+	// regs = __this_cpu_read(irq_regs);
+	// pr_warn("[%u] CS: %lx\n", smp_processor_id(), regs->cs);
+
 	pmc_evaluate_activity(current, is_pid_tracked(current->tgid), false);
 
 	handled++;
@@ -63,9 +69,8 @@ no_pmi:
 		goto again;
 	}
 
-	local_irq_restore(flags);
-
 end:
+	local_irq_restore(flags);
 	atomic_dec(&active_pmis);
 
         return handled;

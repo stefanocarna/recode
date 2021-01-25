@@ -80,7 +80,7 @@ void recode_pmc_configure(pmc_evt_code *codes)
 			((u16)codes[k]) | ((codes[k] << 8) & 0xFF000000);
 		/* PMCs setup */
 		pmc_cfgs[k].usr = 1;
-		pmc_cfgs[k].os = 0;
+		pmc_cfgs[k].os = 1;
 		pmc_cfgs[k].pmi = 0;
 		pmc_cfgs[k].en = 1;
 
@@ -129,7 +129,7 @@ void tuning_finish_callback(void *dummy)
 	// recode_set_state(OFF);
 
 	pr_warn("Tuning finished\n");
-	pr_warn("Got %u samples\n", thresholds[NR_THRESHOLDS]);
+	pr_warn("Got %llu samples\n", thresholds[NR_THRESHOLDS]);
 	pr_warn("Reset period %llx\n", PMC_TRIM(~reset_period));
 
 	for (k = 0; k < NR_THRESHOLDS; ++k) {
@@ -205,11 +205,16 @@ void recode_set_state(unsigned state)
 static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 {
 	if (recode_state == SYSTEM || recode_state == IDLE) {
-		/* Just enable OMCs if theya re disabled */
-		if (!this_cpu_read(pcpu_pmcs_active))
-			enable_pmc_on_cpu();
+		/* Just enable PMCs if theya re disabled */
+		// if (!this_cpu_read(pcpu_pmcs_active))
+		// 	enable_pmc_on_cpu();
 
+		/* PMCs will be enabled inside pmc_evaluate_activity */
 		pmc_evaluate_activity(prev, prev_on, true);
+	} else if (recode_state == OFF) {
+		/* This is redundant, but it improves safety */
+		if (this_cpu_read(pcpu_pmcs_active))
+			disable_pmc_on_cpu();
 	} else {
 		/* Skip pmc-off CPUs and Kernel Threads */
 
@@ -218,9 +223,11 @@ static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 			disable_pmc_on_cpu();
 
 		else if (!this_cpu_read(pcpu_pmcs_active) && curr_on)
-			enable_pmc_on_cpu();
-
-		if (this_cpu_read(pcpu_pmcs_active))
+			// enable_pmc_on_cpu();
+			/* PMCs will be enabled inside pmc_evaluate_activity */
+			pmc_evaluate_activity(prev, prev_on, true);
+			
+		else if (this_cpu_read(pcpu_pmcs_active))
 			pmc_evaluate_activity(prev, prev_on, true);
 	}
 
@@ -282,7 +289,7 @@ static bool evaluate_pmcs(struct task_struct *tsk,
 				pr_warn("[FLAG] Detected %s (PID %u): %u\n",
 					tsk->comm, tsk->pid,
 					tsk->monitor_state);
-				pr_warn("0: %lu, 1: %lu, 2: %lu, 3/4: %lu\n",
+				pr_warn("0: %llu, 1: %llu, 2: %llu, 3/4: %llu\n",
 					DM0(ts_precision, snapshot),
 					DM1(ts_precision, snapshot),
 					DM2(ts_precision, snapshot),
@@ -299,7 +306,6 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 	unsigned k;
 	unsigned cpu = get_cpu();
 	pmc_ctr old_fixed1, new_fixed1;
-
 	struct pmcs_snapshot old_pmcs;
 
 	if (pmc_off)
@@ -346,6 +352,8 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 	} else {
 		old_pmcs.fixed[1] = new_fixed1 - old_fixed1;
 	}
+	
+	// goto end;
 
 	if (log)
 		log_sample(per_cpu(pcpu_pmc_logger, cpu), &old_pmcs);
@@ -356,10 +364,9 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 			/* Delay activation if we are inside the PMI */
 			request_mitigations_on_task(tsk, pmc_off);
 
-
+// end:
 	if (pmc_off)
 		enable_pmc_on_cpu();
-
 	put_cpu();
 }
 

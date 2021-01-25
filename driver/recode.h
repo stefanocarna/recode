@@ -16,7 +16,7 @@ extern u64 perf_global_ctrl;
 
 #define PERF_GLOBAL_CTRL_FIXED1_MASK BIT_ULL(33)
 
-#define PMC_TRIM(n) (n & (BIT_ULL(48) - 1))
+#define PMC_TRIM(n) ((n) & (BIT_ULL(48) - 1))
 
 #define READ_FIXED_PMC(n) native_read_msr(MSR_CORE_PERF_FIXED_CTR0 + n)
 #define READ_GENERAL_PMC(n) native_read_msr(MSR_CORE_PERF_GENERAL_CTR0 + n)

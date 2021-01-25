@@ -39,7 +39,7 @@ void get_machine_configuration(void)
 		min_t(unsigned, 8, eax.split.num_counters));
 
 	max_pmc_general = eax.split.num_counters;
-	perf_global_ctrl = (BIT(8) - 1) | BIT(32) | BIT(33) | BIT(34);
+	perf_global_ctrl = (BIT(max_pmc_general) - 1) | BIT(32) | BIT(33) | BIT(34);
 }
 
 static void __setup_pmc_on_cpu(void *pmc_cfgs)

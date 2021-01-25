@@ -1,4 +1,4 @@
-#!/bin/python
+#!/bin/python3
 import argparse
 from enum import IntEnum
 import os
@@ -183,7 +183,7 @@ def check_recode():
 
 def __action_module(action):
     if action == "c":
-        action = "make CC=clang"
+        action = "make"
         print("Compiling module...")
     elif action == "i":
         action = "make insert"
@@ -434,6 +434,9 @@ if __name__ == "__main__":
         print("Recode module not detected... Is it loaded?. Exit")
         exit(0)
 
+    if args.frequency:
+        action_frequency(args.frequency)
+    
     if args.state:
         action_state(args.state)
 
