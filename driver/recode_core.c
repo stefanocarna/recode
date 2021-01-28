@@ -52,7 +52,7 @@ int recode_data_init(void)
 			goto mem_err;
 		per_cpu(pcpu_pmcs_active, cpu) = false;
 		per_cpu(pcpu_counter, cpu) = 0;
-		per_cpu(pcpu_pmcs_snapshot.fixed[1], cpu) =
+		per_cpu(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi], cpu) =
 			PMC_TRIM(reset_period);
 	}
 
@@ -80,7 +80,7 @@ void recode_pmc_configure(pmc_evt_code *codes)
 			((u16)codes[k]) | ((codes[k] << 8) & 0xFF000000);
 		/* PMCs setup */
 		pmc_cfgs[k].usr = 1;
-		pmc_cfgs[k].os = 0;
+		pmc_cfgs[k].os = 1;
 		pmc_cfgs[k].pmi = 0;
 		pmc_cfgs[k].en = 1;
 
@@ -154,7 +154,7 @@ static void recode_reset_data(void)
 		for (pmc = 0; pmc < max_pmc_fixed; ++pmc)
 			per_cpu(pcpu_pmcs_snapshot.fixed[pmc], cpu) = 0;
 
-		per_cpu(pcpu_pmcs_snapshot.fixed[1], cpu) =
+		per_cpu(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi], cpu) =
 			PMC_TRIM(reset_period);
 
 		for (pmc = 0; pmc < max_pmc_general; ++pmc)
@@ -173,6 +173,7 @@ void recode_set_state(unsigned state)
 	if (state == OFF && old_state != OFF) {
 		disable_pmc_on_system();
 		pr_info("Recode state: OFF\n");
+		return;
 	} else if (state == TUNING) {
 		/* Requires binding to one cpu */
 		/* Set threshold mode and activate PROFILE */
@@ -191,7 +192,7 @@ void recode_set_state(unsigned state)
 		/* Reset DATA and set SYSTEM mode */
 		recode_reset_data();
 		pr_info("Recode ready for SYSTEM\n");
-	}  else if (state == IDLE) {
+	} else if (state == IDLE) {
 		pr_info("Recode is IDLE\n");
 	} else {
 		pr_warn("Recode invalid state\n");
@@ -204,23 +205,29 @@ void recode_set_state(unsigned state)
 
 static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 {
+	/* The system is alive, let inform the PMI handler */
+	this_cpu_write(pcpu_pmi_counter, 0);
+	
 	if (recode_state == SYSTEM || recode_state == IDLE) {
-		/* Just enable OMCs if theya re disabled */
-		if (!this_cpu_read(pcpu_pmcs_active))
-			enable_pmc_on_cpu();
-
+		/* PMCs will be enabled inside pmc_evaluate_activity */
 		pmc_evaluate_activity(prev, prev_on, true);
-	} else {
-		/* Skip pmc-off CPUs and Kernel Threads */
-
+	} else if (recode_state == OFF) {
+		/* This is redundant, but it improves safety */
+		if (this_cpu_read(pcpu_pmcs_active))
+			disable_pmc_on_cpu();
+		return;
+	} else { 
+		/* PROFILE || TUNING */
 		/* Toggle PMI */
 		if (this_cpu_read(pcpu_pmcs_active) && !curr_on)
 			disable_pmc_on_cpu();
 
 		else if (!this_cpu_read(pcpu_pmcs_active) && curr_on)
-			enable_pmc_on_cpu();
-
-		if (this_cpu_read(pcpu_pmcs_active))
+			// enable_pmc_on_cpu();
+			/* PMCs will be enabled inside pmc_evaluate_activity */
+			pmc_evaluate_activity(prev, prev_on, true);
+			
+		else if (this_cpu_read(pcpu_pmcs_active))
 			pmc_evaluate_activity(prev, prev_on, true);
 	}
 
@@ -299,7 +306,6 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 	unsigned k;
 	unsigned cpu = get_cpu();
 	pmc_ctr old_fixed1, new_fixed1;
-
 	struct pmcs_snapshot old_pmcs;
 
 	if (pmc_off)
@@ -325,8 +331,8 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 	 */
 
 	/* Implementing Solution 2. */
-	old_fixed1 = old_pmcs.fixed[1];
-	new_fixed1 = per_cpu(pcpu_pmcs_snapshot.fixed[1], cpu);
+	old_fixed1 = old_pmcs.fixed[fixed_pmc_pmi];
+	new_fixed1 = per_cpu(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi], cpu);
 
 	for_each_pmc(k, max_pmc_fixed + max_pmc_general)
 	{
@@ -335,23 +341,24 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 				 old_pmcs.pmcs[k]);
 	}
 
-	/* TSC is not computed and is set to "this" moment */
+	/* TSC is not computed and it is set to "this" moment */
 	old_pmcs.tsc = per_cpu(pcpu_pmcs_snapshot.tsc, cpu);
 
 	if (old_fixed1 >= new_fixed1) {
 		old_pmcs.fixed[1] =
 			PMC_TRIM(((BIT_ULL(48) - 1) - old_fixed1) + new_fixed1);
-		this_cpu_add(pcpu_pmcs_snapshot.fixed[1],
+		this_cpu_add(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi],
 			     reset_period + new_fixed1);
 	} else {
-		old_pmcs.fixed[1] = new_fixed1 - old_fixed1;
+		old_pmcs.fixed[fixed_pmc_pmi] = new_fixed1 - old_fixed1;
 	}
 
 	if (log)
 		log_sample(per_cpu(pcpu_pmc_logger, cpu), &old_pmcs);
 
 	/* Skip small samples */
-	if (per_cpu(pcpu_pmcs_snapshot.fixed[1], cpu) - old_pmcs.fixed[1] > 0xFFFF)
+	if ((per_cpu(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi], cpu) - 
+	    old_pmcs.fixed[fixed_pmc_pmi]) > 0xFFFF)
 		if(evaluate_pmcs(tsk, &old_pmcs))
 			/* Delay activation if we are inside the PMI */
 			request_mitigations_on_task(tsk, pmc_off);
@@ -359,7 +366,6 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 
 	if (pmc_off)
 		enable_pmc_on_cpu();
-
 	put_cpu();
 }
 

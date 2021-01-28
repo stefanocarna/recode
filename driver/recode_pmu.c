@@ -4,8 +4,12 @@
 #include "recode.h"
 
 u64 perf_global_ctrl = 0xFULL | BIT_ULL(32) | BIT_ULL(33) | BIT_ULL(34);
-u64 fixed_ctrl = 0x3B3;
+u64 fixed_ctrl = 0;
+// u64 fixed_ctrl = 0x3B3; // Enable OS + USR
+// u64 fixed_ctrl = 0x3A3; // Enable USR only
+// u64 fixed_ctrl = 0x393; // Enable OS only
 
+unsigned __read_mostly fixed_pmc_pmi = 1; // PMC with PMI active
 unsigned __read_mostly max_pmc_fixed = 3;
 unsigned __read_mostly max_pmc_general = 4;
 
@@ -39,7 +43,7 @@ void get_machine_configuration(void)
 		min_t(unsigned, 8, eax.split.num_counters));
 
 	max_pmc_general = eax.split.num_counters;
-	perf_global_ctrl = (BIT(8) - 1) | BIT(32) | BIT(33) | BIT(34);
+	perf_global_ctrl = (BIT(max_pmc_general) - 1) | BIT(32) | BIT(33) | BIT(34);
 }
 
 static void __setup_pmc_on_cpu(void *pmc_cfgs)
@@ -60,9 +64,6 @@ static void __setup_pmc_on_cpu(void *pmc_cfgs)
 	rdmsrl(MSR_CORE_PERF_GLOBAL_STATUS, msr);
 	wrmsrl(MSR_CORE_PERF_GLOBAL_OVF_CTRL, msr);
 
-	/* Setup FIXED PMCs */
-	wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, fixed_ctrl);
-
 	/* Enable FREEZE_ON_PMI */
 	wrmsrl(MSR_IA32_DEBUGCTLMSR, BIT(12));
 
@@ -71,9 +72,18 @@ static void __setup_pmc_on_cpu(void *pmc_cfgs)
 		WRITE_GENERAL_PMC(k, 0ULL);
 	}
 
-	WRITE_FIXED_PMC(0, 0ULL);
-	WRITE_FIXED_PMC(1, reset_period);
-	WRITE_FIXED_PMC(2, 0ULL);
+	for (k = 0; k < max_pmc_fixed; ++k) {
+		if (k == fixed_pmc_pmi) {
+			WRITE_FIXED_PMC(k, reset_period);
+			fixed_ctrl |= (0xB << (k * 4)); /* 1011 -> PMI, USR, OS */
+		} else {
+			WRITE_FIXED_PMC(k, 0ULL);
+			fixed_ctrl |= (0x3 << (k * 4)); /* 0011 -> USR, OS */
+		}
+	}
+
+	/* Setup FIXED PMCs */
+	wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, fixed_ctrl);
 }
 
 void setup_pmc_on_system(struct pmc_evt_sel *pmc_cfgs)

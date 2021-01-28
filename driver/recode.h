@@ -7,6 +7,11 @@
 
 #include "recode_structs.h"
 
+#define MODNAME	"ReCode"
+
+#undef pr_fmt
+#define pr_fmt(fmt) MODNAME ": " fmt
+
 /*  */
 extern u64 perf_global_ctrl;
 
@@ -14,6 +19,7 @@ extern u64 perf_global_ctrl;
 #define MSR_CORE_PERF_GENERAL_CTR0 MSR_IA32_PERFCTR0
 #define MSR_CORE_PERFEVTSEL_ADDRESS0 MSR_P6_EVNTSEL0
 
+#define PERF_GLOBAL_CTRL_FIXED0_MASK BIT_ULL(32)
 #define PERF_GLOBAL_CTRL_FIXED1_MASK BIT_ULL(33)
 
 #define PMC_TRIM(n) (n & (BIT_ULL(48) - 1))
@@ -36,8 +42,11 @@ typedef unsigned pmc_evt_code;
 
 extern atomic_t active_pmis;
 
+extern unsigned __read_mostly fixed_pmc_pmi;
 extern unsigned __read_mostly max_pmc_fixed;
 extern unsigned __read_mostly max_pmc_general;
+
+extern unsigned __read_mostly max_pmi_before_ctx;
 
 enum recode_state {
 	OFF = 0,
@@ -82,6 +91,10 @@ extern void process_match(struct task_struct *tsk);
 DECLARE_PER_CPU(struct pmc_logger *, pcpu_pmc_logger);
 
 DECLARE_PER_CPU(bool, pcpu_pmcs_active);
+
+DECLARE_PER_CPU(unsigned long, pcpu_pmi_counter);
+/* TODO Enable in the future */
+// DECLARE_PER_CPU(u64, pcpu_reset_period);
 
 extern pmc_evt_code pmc_events[8]; /* Ignored */
 extern pmc_evt_code pmc_events_sc_detection[8];

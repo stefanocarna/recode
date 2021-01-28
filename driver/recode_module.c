@@ -1,8 +1,8 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 
-#include "recode.h"
 #include "device/proc.h"
+#include "recode.h"
 
 static __init int recode_init(void)
 {
