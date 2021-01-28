@@ -9,7 +9,7 @@ static int thresholds_show(struct seq_file *m, void *v)
 	unsigned i;
 
 	for (i = 0; i < NR_THRESHOLDS; i++) {
-		seq_printf(m, "%u\t", thresholds[i]);
+		seq_printf(m, "%llu\t", thresholds[i]);
 	}
 	seq_printf(m, "\n");
 

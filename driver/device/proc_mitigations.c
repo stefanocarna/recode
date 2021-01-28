@@ -57,7 +57,7 @@ static ssize_t mitigations_write(struct file *file,
 		disable_mitigations_on_system(DM_G_VERBOSE);
 
 
-	pr_info("Mitigations configured: %llx\n", *maskp);
+	pr_info("Mitigations configured: %lx\n", *maskp);
 	return count;
 
 err:

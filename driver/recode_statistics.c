@@ -41,7 +41,7 @@ int log_sample(struct pmc_logger *logger, struct pmcs_snapshot *sample)
         }
 
         if (logger->idx % 128 == 0) {
-                pr_info("Registered %lu samples on core %u\n",
+                pr_info("Registered %u samples on core %u\n",
                         logger->idx, logger->cpu);
         }
 

@@ -129,7 +129,7 @@ void tuning_finish_callback(void *dummy)
 	// recode_set_state(OFF);
 
 	pr_warn("Tuning finished\n");
-	pr_warn("Got %u samples\n", thresholds[NR_THRESHOLDS]);
+	pr_warn("Got %llu samples\n", thresholds[NR_THRESHOLDS]);
 	pr_warn("Reset period %llx\n", PMC_TRIM(~reset_period));
 
 	for (k = 0; k < NR_THRESHOLDS; ++k) {
@@ -289,7 +289,7 @@ static bool evaluate_pmcs(struct task_struct *tsk,
 				pr_warn("[FLAG] Detected %s (PID %u): %u\n",
 					tsk->comm, tsk->pid,
 					tsk->monitor_state);
-				pr_warn("0: %lu, 1: %lu, 2: %lu, 3/4: %lu\n",
+				pr_warn("0: %llu, 1: %llu, 2: %llu, 3/4: %llu\n",
 					DM0(ts_precision, snapshot),
 					DM1(ts_precision, snapshot),
 					DM2(ts_precision, snapshot),
@@ -352,6 +352,8 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 	} else {
 		old_pmcs.fixed[fixed_pmc_pmi] = new_fixed1 - old_fixed1;
 	}
+	
+	// goto end;
 
 	if (log)
 		log_sample(per_cpu(pcpu_pmc_logger, cpu), &old_pmcs);
@@ -363,7 +365,7 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 			/* Delay activation if we are inside the PMI */
 			request_mitigations_on_task(tsk, pmc_off);
 
-
+// end:
 	if (pmc_off)
 		enable_pmc_on_cpu();
 	put_cpu();
