@@ -23,12 +23,12 @@ def cmd(cmd_seq, type=None, sh=False, timeOut=None):
         )
         p.wait(timeOut)
         if type == Pipe.OUT or type == Pipe.ERR:
-            return p.communicate()[type].decode("ASCII")
+            return p.communicate()[type].decode("utf-8")
         elif type == Pipe.RET:
             return p.returncode
         else:
             out, err = p.communicate()
-            return out.decode("ASCII"), err.decode("ASCII"), p.returncode
+            return out.decode("utf-8"), err.decode("utf-8"), p.returncode
     except subprocess.TimeoutExpired:
         print("Process automatically teminated after " + str(timeOut) + " sec")
         p.terminate()
