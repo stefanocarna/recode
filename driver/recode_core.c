@@ -353,8 +353,6 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 		old_pmcs.fixed[fixed_pmc_pmi] = new_fixed1 - old_fixed1;
 	}
 	
-	// goto end;
-
 	if (log)
 		log_sample(per_cpu(pcpu_pmc_logger, cpu), &old_pmcs);
 
@@ -365,7 +363,6 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 			/* Delay activation if we are inside the PMI */
 			request_mitigations_on_task(tsk, pmc_off);
 
-// end:
 	if (pmc_off)
 		enable_pmc_on_cpu();
 	put_cpu();

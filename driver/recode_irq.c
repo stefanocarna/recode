@@ -94,6 +94,8 @@ again:
 	// pr_warn("[%u] CS: %lx\n", smp_processor_id(), regs->cs);
 	// pr_warn("[%u] PMI\n", smp_processor_id());
 
+	pmc_evaluate_activity(current, false, false);
+	/* TODO Fix - is_pid_tracked causes system hang */
 	// pmc_evaluate_activity(current, is_pid_tracked(current->tgid), false);
 
 	handled++;
