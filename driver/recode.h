@@ -46,7 +46,7 @@ extern unsigned __read_mostly fixed_pmc_pmi;
 extern unsigned __read_mostly max_pmc_fixed;
 extern unsigned __read_mostly max_pmc_general;
 
-extern unsigned __read_mostly max_pmi_before_ctx;
+extern unsigned long __read_mostly max_pmi_before_ctx;
 
 enum recode_state {
 	OFF = 0,

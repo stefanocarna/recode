@@ -170,7 +170,7 @@ void recode_set_state(unsigned state)
 	if (old_state == recode_state)
 		return;
 
-	if (state == OFF && old_state != OFF) {
+	if (state == OFF) {
 		disable_pmc_on_system();
 		pr_info("Recode state: OFF\n");
 		return;
