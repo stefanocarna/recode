@@ -292,7 +292,7 @@ def action_frequency(value):
 
 
 def get_info(info):
-    if info not in ["frequency", "events", "thresholds"]:
+    if info not in ["frequency", "events", "thresholds", "statistics"]:
         print("Cannot read " + info + " info. Returning 0")
         return 0
 
@@ -308,6 +308,7 @@ def action_info():
     print(" - frequency:\t" + hex(int("0x" + get_info("frequency"), 0)))
     print(" - events:\t" + get_info("events"))
     print(" - thresholds:\t" + get_info("thresholds"))
+    print(" - PMIs:\t" + get_info("statistics"))
 
 
 def action_exec(prog, args, timeout, cpu, profile=True):

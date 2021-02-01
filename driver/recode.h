@@ -41,6 +41,7 @@ typedef unsigned pmc_evt_code;
 #define RECODE_PMI 239
 
 extern atomic_t active_pmis;
+extern atomic_t generated_pmis;
 
 extern unsigned __read_mostly fixed_pmc_pmi;
 extern unsigned __read_mostly max_pmc_fixed;

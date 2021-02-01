@@ -25,6 +25,7 @@ $(MODULE_NAME)-y += device/proc_frequency.o
 $(MODULE_NAME)-y += device/proc_mitigations.o
 $(MODULE_NAME)-y += device/proc_processes.o
 $(MODULE_NAME)-y += device/proc_state.o
+$(MODULE_NAME)-y += device/proc_statistics.o
 $(MODULE_NAME)-y += device/proc_thresholds.o
 
 obj-m := $(MODULE_NAME).o

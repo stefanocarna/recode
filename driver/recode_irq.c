@@ -20,6 +20,10 @@ int pmi_recode(void)
 	// struct pt_regs *regs;
 
 	atomic_inc(&active_pmis);
+	
+	/* Module statistics */
+	atomic_inc(&generated_pmis);
+	
 	/* Not sure we need this */
 	// local_irq_save(flags);
 
@@ -34,25 +38,26 @@ int pmi_recode(void)
 	 * computed during experimental phase.
 	 */
 
-	if (this_cpu_read(pcpu_pmi_counter) > max_pmi_before_ctx) {
-		u64 nrs = PMC_TRIM(this_cpu_read(pcpu_reset_period) << 4);
-		// pr_warn("[%u] Too many PMIs before CTX\n", smp_processor_id());
+	/* TODO Restore */
+	// if (this_cpu_read(pcpu_pmi_counter) > max_pmi_before_ctx) {
+	// 	u64 nrs = PMC_TRIM(this_cpu_read(pcpu_reset_period) << 4);
+	// 	// pr_warn("[%u] Too many PMIs before CTX\n", smp_processor_id());
 
-		/* Try to atomically adjust the reset period */
-		if (__sync_bool_compare_and_swap(&reset_period, 
-			this_cpu_read(pcpu_reset_period), nrs)) {
+	// 	/* Try to atomically adjust the reset period */
+	// 	if (__sync_bool_compare_and_swap(&reset_period, 
+	// 		this_cpu_read(pcpu_reset_period), nrs)) {
 			
-			// pr_warn("[%u] Reset_period updated to: %llx\n", 
-				// smp_processor_id(), nrs);
+	// 		// pr_warn("[%u] Reset_period updated to: %llx\n", 
+	// 			// smp_processor_id(), nrs);
 
-			/* Give the System a grace time */
-			this_cpu_sub(pcpu_pmi_counter, 
-				this_cpu_read(pcpu_pmi_counter) >> 1);
-		} else {
-			// pr_warn("[%u] Concurrent update, aborted\n",
-				// smp_processor_id());
-		}
-	}
+	// 		/* Give the System a grace time */
+	// 		this_cpu_sub(pcpu_pmi_counter, 
+	// 			this_cpu_read(pcpu_pmi_counter) >> 1);
+	// 	} else {
+	// 		// pr_warn("[%u] Concurrent update, aborted\n",
+	// 			// smp_processor_id());
+	// 	}
+	// }
 
 	/* Safe Guard ? */
 	if (recode_state == OFF)

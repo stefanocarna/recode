@@ -17,7 +17,8 @@
 DEFINE_PER_CPU(struct pmcs_snapshot, pcpu_pmcs_snapshot) = { 0 };
 DEFINE_PER_CPU(bool, pcpu_last_ctx_snapshot) = false;
 
-atomic_t active_pmis;
+atomic_t active_pmis = { 0 };
+atomic_t generated_pmis = { 0 };
 
 enum recode_state __read_mostly recode_state = OFF;
 
@@ -200,7 +201,11 @@ void recode_set_state(unsigned state)
 		return;
 	}
 
+	/* Reset module statistics */
+	generated_pmis.counter = 0;
+
 	setup_pmc_on_system(pmc_cfgs);
+	enable_pmc_on_system();
 }
 
 static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
