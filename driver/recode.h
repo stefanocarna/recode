@@ -42,6 +42,8 @@ typedef unsigned pmc_evt_code;
 
 extern atomic_t active_pmis;
 
+extern atomic_t detected_theads;
+
 extern unsigned __read_mostly fixed_pmc_pmi;
 extern unsigned __read_mostly max_pmc_fixed;
 extern unsigned __read_mostly max_pmc_general;

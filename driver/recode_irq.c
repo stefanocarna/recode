@@ -14,6 +14,7 @@ unsigned long __read_mostly max_pmi_before_ctx = (1ULL << 13); // 8192
 int pmi_recode(void)
 {
 	u64 global;
+	bool log;
 	unsigned handled = 0, loops = 0;
 	// unsigned long flags = 0;
 	/* TODO Debug */
@@ -94,9 +95,10 @@ again:
 	// pr_warn("[%u] CS: %lx\n", smp_processor_id(), regs->cs);
 	// pr_warn("[%u] PMI\n", smp_processor_id());
 
-	pmc_evaluate_activity(current, false, false);
+	// pmc_evaluate_activity(current, false, false);
 	/* TODO Fix - is_pid_tracked causes system hang */
-	// pmc_evaluate_activity(current, is_pid_tracked(current->tgid), false);
+	log = (recode_state != TUNING) && is_pid_tracked(current->tgid);
+	pmc_evaluate_activity(current, log, false);
 
 	handled++;
 

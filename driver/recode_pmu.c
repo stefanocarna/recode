@@ -30,16 +30,16 @@ void get_machine_configuration(void)
 
 	version = eax.split.version_id;
 
-	pr_info("RECODE gets PMU CONF:\n");
-	pr_info("Version: %u\n", version);
-	pr_info("Counters: %u\n", eax.split.num_counters);
-	pr_info("Counter's Bits: %u\n", eax.split.bit_width);
-	pr_info("Counter's Mask: %llx\n", (1ULL << eax.split.bit_width) - 1);
+	pr_info("PMU CONF:\n");
+	// pr_info("Version: %u\n", version);
+	pr_info("-- # Counters: %u\n", eax.split.num_counters);
+	// pr_info("Counter's Bits: %u\n", eax.split.bit_width);
+	// pr_info("Counter's Mask: %llx\n", (1ULL << eax.split.bit_width) - 1);
 
-	pr_info("Evt's Bits: %u\n", ebx.full);
-	pr_info("Evt's Mask: %x\n", eax.split.mask_length);
+	// pr_info("Evt's Bits: %u\n", ebx.full);
+	// pr_info("Evt's Mask: %x\n", eax.split.mask_length);
 
-	pr_info("PEBS MAX EVTs: %x\n",
+	pr_info("-- # PEBS EVTs: %x\n",
 		min_t(unsigned, 8, eax.split.num_counters));
 
 	max_pmc_general = eax.split.num_counters;

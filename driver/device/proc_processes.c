@@ -47,8 +47,6 @@ int register_proc_processes(void)
 {
         struct proc_dir_entry *dir;
 
-        pr_info("OPS %s\n", GET_PATH("processes"));
-
 	dir = proc_create(GET_PATH("processes"), 0222, NULL,
 		    &processes_proc_fops);
 

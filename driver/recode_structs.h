@@ -38,3 +38,20 @@ struct statistic {
 	// u64 last_sample;
 	struct statistic *next;
 };
+
+struct detect_stats {
+	/* Voluntary CTX before detection */
+	unsigned nvcsw;	
+	/* UnVoluntary CTX before detection */
+	unsigned nivcsw;
+	/* Execution time */
+	u64 utime;
+	u64 stime;
+	/* Process data*/
+	pid_t pid;
+	pid_t tgid;
+	char comm[32];
+	/* PMIs since first detection */
+	unsigned pmis;
+	unsigned skpmis;
+};

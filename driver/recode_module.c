@@ -15,7 +15,7 @@ static __init int recode_init(void)
 	if(recode_pmc_init())
 		goto err;
 
-	pr_info("hack_init module install\n");
+	pr_info("module loaded\n");
 	return 0;
 
 err:

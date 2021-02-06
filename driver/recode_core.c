@@ -17,6 +17,9 @@
 DEFINE_PER_CPU(struct pmcs_snapshot, pcpu_pmcs_snapshot) = { 0 };
 DEFINE_PER_CPU(bool, pcpu_last_ctx_snapshot) = false;
 
+#define STATS_EN_MASK	BIT(31)
+#define MSK_16(v)	(v & (BIT(16) - 1))		
+
 atomic_t active_pmis;
 
 enum recode_state __read_mostly recode_state = OFF;
@@ -26,6 +29,8 @@ enum recode_state __read_mostly recode_state = OFF;
 s64 thresholds[NR_THRESHOLDS + 1] = { 950, 950, 0, 0, 950, 0 };
 
 #define DEFAULT_TS_PRECISION 1000
+
+atomic_t detected_theads;
 
 unsigned ts_precision = DEFAULT_TS_PRECISION;
 unsigned ts_precision_5 = (DEFAULT_TS_PRECISION * 0.05);
@@ -84,7 +89,7 @@ void recode_pmc_configure(pmc_evt_code *codes)
 		pmc_cfgs[k].pmi = 0;
 		pmc_cfgs[k].en = 1;
 
-		pr_info("recode_pmc_init %llx\n", pmc_cfgs[k].perf_evt_sel);
+		// pr_info("recode_pmc_init %llx\n", pmc_cfgs[k].perf_evt_sel);
 	}
 }
 
@@ -126,7 +131,7 @@ void tuning_finish_callback(void *dummy)
 {
 	unsigned k;
 
-	// recode_set_state(OFF);
+	recode_set_state(OFF);
 
 	pr_warn("Tuning finished\n");
 	pr_warn("Got %llu samples\n", thresholds[NR_THRESHOLDS]);
@@ -218,6 +223,9 @@ static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 		return;
 	} else { 
 		/* PROFILE || TUNING */
+		/* Enable logging only for profiled tasks */
+		bool log = (recode_state != TUNING) && prev_on;
+
 		/* Toggle PMI */
 		if (this_cpu_read(pcpu_pmcs_active) && !curr_on)
 			disable_pmc_on_cpu();
@@ -225,10 +233,10 @@ static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 		else if (!this_cpu_read(pcpu_pmcs_active) && curr_on)
 			// enable_pmc_on_cpu();
 			/* PMCs will be enabled inside pmc_evaluate_activity */
-			pmc_evaluate_activity(prev, prev_on, true);
+			pmc_evaluate_activity(prev, log, true);
 			
 		else if (this_cpu_read(pcpu_pmcs_active))
-			pmc_evaluate_activity(prev, prev_on, true);
+			pmc_evaluate_activity(prev, log, true);
 	}
 
 	/* Activate on previous task */
@@ -240,9 +248,97 @@ static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 	mitigations_switch(prev, current);
 }
 
+static void enable_detection_statistics(struct task_struct *tsk)
+{
+	struct detect_stats *ds;
+
+	/* Skif if already allocated */
+	if (tsk->monitor_state & STATS_EN_MASK)
+		return;
+	
+	ds = kmalloc(sizeof(struct detect_stats), GFP_ATOMIC);
+
+	if (!ds) {
+		pr_warn("@%u] Cannot allocate statistics for pid %u\n",
+			smp_processor_id(), tsk->pid);
+		return;
+	}
+
+	/* Copy and safe truncate the task name */
+	memcpy(ds->comm, tsk->comm, sizeof(ds->comm));
+	ds->comm[sizeof(ds->comm) - 1] = '\0';
+
+	ds->pid = tsk->pid;
+	ds->tgid = tsk->tgid;
+
+	ds->nvcsw = tsk->nvcsw;
+	ds->nivcsw = tsk->nivcsw;
+	ds->pmis = 0;
+	ds->skpmis = 0;
+	ds->utime = tsk->utime;
+	ds->stime = tsk->stime;
+
+	/* Attach stats to task */
+	tsk->monitor_state |= STATS_EN_MASK;
+	tsk->monitor_data = (void *) ds;
+}
+
+static inline void update_detection_statisitcs(struct task_struct *tsk, bool skip)
+{
+	/* Skip KThreads */
+	if (!tsk->mm)
+		return;
+
+	if (!(tsk->monitor_state & STATS_EN_MASK))
+		return;
+
+	if (skip)
+		((struct detect_stats *)tsk->monitor_data)->skpmis++;
+	else
+		((struct detect_stats *)tsk->monitor_data)->pmis++;
+}	
+
+static void finalize_detection_statisitcs(struct task_struct *tsk)
+{
+	struct detect_stats *ds;
+
+	/* Skip KThreads */
+	if (!tsk->mm)
+		return;
+
+	/* Something went wrong */
+	if (!(tsk->monitor_state & STATS_EN_MASK))
+		return;
+
+	ds = (struct detect_stats *)tsk->monitor_data;
+
+	ds->nvcsw = tsk->nvcsw - ds->nvcsw;
+	ds->nivcsw = tsk->nivcsw - ds->nivcsw;
+	ds->utime = tsk->utime - ds->utime;
+	ds->stime = tsk->stime - ds->stime; 
+
+	tsk->monitor_state &= ~STATS_EN_MASK;
+	tsk->monitor_data = NULL;
+
+	/* Print all the values */
+	pr_warn("DETECTED pid %u (tgid %u): %s\n", ds->pid, ds->tgid, ds->comm);
+	printk(" **   VCSW --> %u\n", ds->nvcsw);
+	printk(" **  IVCSW --> %u\n", ds->nivcsw);
+	printk(" **  UTIME --> %llu\n", ds->utime);
+	printk(" **  STIME --> %llu\n", ds->stime);
+	printk(" **   PMIs --> %u\n", ds->pmis);
+	printk(" ** skPMIs --> %u\n", ds->skpmis);
+	printk(" ****  END OF REPORT  ****\n");
+	kfree(ds);
+}
+
 static bool evaluate_pmcs(struct task_struct *tsk,
 			  struct pmcs_snapshot *snapshot)
 {
+	/* Skip KThreads */
+	if (!tsk->mm)
+		goto end;
+
 	if (recode_state == IDLE) {
 		/* Do nothing */
 	} else if (recode_state == TUNING) {
@@ -257,8 +353,8 @@ static bool evaluate_pmcs(struct task_struct *tsk,
 	} else {
 		if (!has_mitigations(tsk)) {
 			// TODO Remove - Init task_struct
-			if (tsk->monitor_state > ts_window + 1)
-				tsk->monitor_state = 0;
+			if (MSK_16(tsk->monitor_state) > ts_window + 1)
+				tsk->monitor_state &= ~(BIT(16) - 1);
 
 			if ((CHECK_LESS_THAN_TS(thresholds[0],
 						DM0(ts_precision, snapshot),
@@ -277,27 +373,34 @@ static bool evaluate_pmcs(struct task_struct *tsk,
 					       DM3(ts_precision, snapshot),
 					       ts_precision_5)) {
 				tsk->monitor_state += ts_alpha;
-				pr_info("[++] %s (PID %u): %u\n", tsk->comm,
-					tsk->pid, tsk->monitor_state);
-			} else if (tsk->monitor_state > 0) {
-				tsk->monitor_state -= ts_alpha;
-				pr_info("[--] %s (PID %u): %u\n", tsk->comm,
-					tsk->pid, tsk->monitor_state);
+				// pr_info("[++] %s (PID %u): %u\n", tsk->comm,
+				// 	tsk->pid, tsk->monitor_state);
+
+				/* Enable statitics for this task */
+				enable_detection_statistics(tsk);
+			} else if (MSK_16(tsk->monitor_state) > 0) {
+				tsk->monitor_state -= ts_beta;
+				// pr_info("[--] %s (PID %u): %u\n", tsk->comm,
+				// 	tsk->pid, tsk->monitor_state);
 			}
 
-			if (tsk->monitor_state > ts_window) {
-				pr_warn("[FLAG] Detected %s (PID %u): %u\n",
-					tsk->comm, tsk->pid,
-					tsk->monitor_state);
-				pr_warn("0: %llu, 1: %llu, 2: %llu, 3/4: %llu\n",
-					DM0(ts_precision, snapshot),
-					DM1(ts_precision, snapshot),
-					DM2(ts_precision, snapshot),
-					DM3(ts_precision, snapshot));
+			if (MSK_16(tsk->monitor_state) > ts_window) {
+				// pr_warn("[FLAG] Detected %s (PID %u): %u\n",
+				// 	tsk->comm, tsk->pid,
+				// 	tsk->monitor_state);
+				// pr_warn("0: %llu, 1: %llu, 2: %llu, 3/4: %llu\n",
+				// 	DM0(ts_precision, snapshot),
+				// 	DM1(ts_precision, snapshot),
+				// 	DM2(ts_precision, snapshot),
+				// 	DM3(ts_precision, snapshot));
+				/* Close statitics for this task */
+				atomic_inc(&detected_theads);
+				finalize_detection_statisitcs(tsk);
 				return true;
 			}
 		}
 	}
+end:
 	return false;
 }
 
@@ -356,12 +459,19 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 	if (log)
 		log_sample(per_cpu(pcpu_pmc_logger, cpu), &old_pmcs);
 
+	update_detection_statisitcs(tsk, false);
+
 	/* Skip small samples */
 	if ((per_cpu(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi], cpu) - 
-	    old_pmcs.fixed[fixed_pmc_pmi]) > 0xFFFF)
-		if(evaluate_pmcs(tsk, &old_pmcs))
+	    old_pmcs.fixed[fixed_pmc_pmi]) > 0xFFFF) {
+		if(evaluate_pmcs(tsk, &old_pmcs)) {
 			/* Delay activation if we are inside the PMI */
 			request_mitigations_on_task(tsk, pmc_off);
+		}
+	}
+	else {
+		update_detection_statisitcs(tsk, true);
+	}
 
 	if (pmc_off)
 		enable_pmc_on_cpu();

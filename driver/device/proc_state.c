@@ -32,8 +32,6 @@ int register_proc_state(void)
 {
         struct proc_dir_entry *dir;
 
-        pr_info("OPS %s\n", GET_PATH("state"));
-
 	dir = proc_create(GET_PATH("state"), 0222, NULL,
 		    &state_proc_fops);
 
