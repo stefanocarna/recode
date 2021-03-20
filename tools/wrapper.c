@@ -20,22 +20,22 @@ int main(int argc, char **argv)
 
 	if (argc < 2) goto end;
 
-    /** Registration phase */
-    int child_pid = getpid();
+	/** Registration phase */
+	int child_pid = getpid();
 	FILE* file = fopen(REGISTER_PATH, "w");
-    
-    if (!file) {
-        printf("Cannot open %s. Exiting...\n", REGISTER_PATH);
-        exit(-1);
-    }
 
-    fprintf(file, "%d", child_pid);
+	if (!file) {
+		printf("Cannot open %s. Exiting...\n", REGISTER_PATH);
+		exit(-1);
+	}
+
+	fprintf(file, "%d", child_pid);
 	fclose(file);
 
-    printf("[WRAPPER] Registered PID %d\n", child_pid);
+	printf("[WRAPPER] Registered PID %d\n", child_pid);
 
-    execvp(name, args); 
+	execvp(name, args); 
 
 end:
-    return 0;
+	return 0;
 }
