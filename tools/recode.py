@@ -349,6 +349,8 @@ def tool_plot():
 
 
 def tool_test(test, tuning=False, monitor=False, plot=False):
+    TARGET_PATH = "/usr/lib/x86_64-linux-gnu/libgtk-3.so.0.2404.16"
+    
     if test is None:
         print("Nothing to test. Specify an attack.")
         return
@@ -366,11 +368,11 @@ def tool_test(test, tuning=False, monitor=False, plot=False):
     # flush_flush
     if test == "fr1":
         prog = "attacks/flush_flush/fr/spy"
-        args = "/usr/lib/libgtk-3.so.0.2404.19 0x2a8dc0"
+        args = TARGET_PATH + " 0x2a8dc0"
         time = 2
     if test == "pp1":
         prog = "attacks/flush_flush/pp/spy"
-        args = "/usr/lib/libgtk-3.so.0.2404.19 0x2a8dc0"
+        args = TARGET_PATH + " 0x2a8dc0"
         time = 2
 
     # xlate
@@ -402,7 +404,7 @@ def tool_test(test, tuning=False, monitor=False, plot=False):
         time = 3
     if test == "fr5":
         prog = "attacks/mastik/demo/FR-function-call"
-        args = "/usr/lib/libgtk-3.so.0.2404.19 0x2a8dc0"
+        args = "/usr/lib/x86_64-linux-gnu/libgtk-3.so.0.2404.16 0x2a8dc0"
         time = 3
     if test == "ppl1":
         prog = "attacks/mastik/demo/L1-capture"
