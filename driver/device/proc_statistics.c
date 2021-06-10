@@ -19,11 +19,16 @@ static int statistics_open(struct inode *inode, struct file *filp)
 static ssize_t statistics_write(struct file *file,
 		const char __user *buffer, size_t count, loff_t *ppos)
 {
+	unsigned uncopied;
 	char pname[256];
 	size_t n = count > 255 ? 255 : count;
 
-	copy_from_user((void *)pname, (void *)buffer,
+	uncopied = copy_from_user((void *)pname, (void *)buffer,
 			sizeof(char) * (n));
+	
+	if (uncopied) {
+		pr_warn("Cannot write %u bytes to userspace\n", uncopied);
+	}
 
 	pname[n] = '\0';
 

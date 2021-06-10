@@ -115,6 +115,7 @@ int recode_pmc_init(void)
 
 void recode_pmc_fini(void)
 {
+	int ignored __attribute__((unused));
 	/* Disable Recode */
 	recode_state = OFF;
 
@@ -124,7 +125,7 @@ void recode_pmc_fini(void)
 	while (atomic_read(&active_pmis))
 		;
 
-	free_fast_irq(RECODE_PMI);
+	ignored = free_fast_irq(RECODE_PMI);
 }
 
 void tuning_finish_callback(void *dummy)
