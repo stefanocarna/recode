@@ -14,7 +14,6 @@ unsigned long __read_mostly max_pmi_before_ctx = (1ULL << 13); // 8192
 int pmi_recode(void)
 {
 	u64 global;
-	bool log;
 	unsigned handled = 0, loops = 0;
 	// unsigned long flags = 0;
 	/* TODO Debug */
@@ -26,34 +25,6 @@ int pmi_recode(void)
 
 	/* Inc every time this handler fires */
 	this_cpu_inc(pcpu_pmi_counter);
-
-	/** TODO Create a tuning method
-	 *
-	 * We should borrow the tuning method from perf to avoid to make the
-	 * system experience throttling issues.
-	 * At the moment, this mechanims is hardcoded according to some values
-	 * computed during experimental phase.
-	 */
-
-	if (this_cpu_read(pcpu_pmi_counter) > max_pmi_before_ctx) {
-		u64 nrs = PMC_TRIM(this_cpu_read(pcpu_reset_period) << 4);
-		// pr_warn("[%u] Too many PMIs before CTX\n", smp_processor_id());
-
-		/* Try to atomically adjust the reset period */
-		if (__sync_bool_compare_and_swap(&reset_period, 
-			this_cpu_read(pcpu_reset_period), nrs)) {
-			
-			// pr_warn("[%u] Reset_period updated to: %llx\n", 
-				// smp_processor_id(), nrs);
-
-			/* Give the System a grace time */
-			this_cpu_sub(pcpu_pmi_counter, 
-				this_cpu_read(pcpu_pmi_counter) >> 1);
-		} else {
-			// pr_warn("[%u] Concurrent update, aborted\n",
-				// smp_processor_id());
-		}
-	}
 
 	/* Safe Guard ? */
 	if (recode_state == OFF)
@@ -89,16 +60,6 @@ again:
 		// pr_warn("[%u] LOOP STUCK - STOP PMCs\n", smp_processor_id());
 		goto end;
 	}
-
-	/* TODO Debug */
-	// regs = __this_cpu_read(irq_regs);
-	// pr_warn("[%u] CS: %lx\n", smp_processor_id(), regs->cs);
-	// pr_warn("[%u] PMI\n", smp_processor_id());
-
-	// pmc_evaluate_activity(current, false, false);
-	/* TODO Fix - is_pid_tracked causes system hang */
-	log = (recode_state != TUNING) && is_pid_tracked(current->tgid);
-	pmc_evaluate_activity(current, log, false);
 
 	handled++;
 

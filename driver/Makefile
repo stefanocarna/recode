@@ -22,7 +22,6 @@ $(MODULE_NAME)-y += device/proc.o
 $(MODULE_NAME)-y += device/proc_cpus.o
 $(MODULE_NAME)-y += device/proc_events.o
 $(MODULE_NAME)-y += device/proc_frequency.o
-$(MODULE_NAME)-y += device/proc_mitigations.o
 $(MODULE_NAME)-y += device/proc_processes.o
 $(MODULE_NAME)-y += device/proc_state.o
 $(MODULE_NAME)-y += device/proc_statistics.o

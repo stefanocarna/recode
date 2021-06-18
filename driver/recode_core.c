@@ -3,7 +3,6 @@
 #include <asm/fast_irq.h>
 #include <asm/msr.h>
 
-#include <linux/dynamic-mitigations.h>
 #include <linux/percpu-defs.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -17,9 +16,6 @@
 DEFINE_PER_CPU(struct pmcs_snapshot, pcpu_pmcs_snapshot) = { 0 };
 DEFINE_PER_CPU(bool, pcpu_last_ctx_snapshot) = false;
 
-#define STATS_EN_MASK	BIT(31)
-#define MSK_16(v)	(v & (BIT(16) - 1))		
-
 atomic_t active_pmis;
 
 enum recode_state __read_mostly recode_state = OFF;
@@ -29,8 +25,6 @@ enum recode_state __read_mostly recode_state = OFF;
 s64 thresholds[NR_THRESHOLDS + 1] = { 950, 950, 0, 0, 950, 0 };
 
 #define DEFAULT_TS_PRECISION 1000
-
-atomic_t detected_theads;
 
 unsigned ts_precision = DEFAULT_TS_PRECISION;
 unsigned ts_precision_5 = (DEFAULT_TS_PRECISION * 0.05);
@@ -57,7 +51,7 @@ int recode_data_init(void)
 			goto mem_err;
 		per_cpu(pcpu_pmcs_active, cpu) = false;
 		per_cpu(pcpu_counter, cpu) = 0;
-		per_cpu(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi], cpu) =
+		per_cpu(pcpu_pmcs_snapshot.fixed[1], cpu) =
 			PMC_TRIM(reset_period);
 	}
 
@@ -85,11 +79,11 @@ void recode_pmc_configure(pmc_evt_code *codes)
 			((u16)codes[k]) | ((codes[k] << 8) & 0xFF000000);
 		/* PMCs setup */
 		pmc_cfgs[k].usr = 1;
-		pmc_cfgs[k].os = 1;
+		pmc_cfgs[k].os = 0;
 		pmc_cfgs[k].pmi = 0;
 		pmc_cfgs[k].en = 1;
 
-		// pr_info("recode_pmc_init %llx\n", pmc_cfgs[k].perf_evt_sel);
+		pr_info("recode_pmc_init %llx\n", pmc_cfgs[k].perf_evt_sel);
 	}
 }
 
@@ -115,7 +109,6 @@ int recode_pmc_init(void)
 
 void recode_pmc_fini(void)
 {
-	int ignored __attribute__((unused));
 	/* Disable Recode */
 	recode_state = OFF;
 
@@ -125,27 +118,7 @@ void recode_pmc_fini(void)
 	while (atomic_read(&active_pmis))
 		;
 
-	ignored = free_fast_irq(RECODE_PMI);
-}
-
-void tuning_finish_callback(void *dummy)
-{
-	unsigned k;
-
-	recode_set_state(OFF);
-
-	pr_warn("Tuning finished\n");
-	pr_warn("Got %llu samples\n", thresholds[NR_THRESHOLDS]);
-	pr_warn("Reset period %llx\n", PMC_TRIM(~reset_period));
-
-	for (k = 0; k < NR_THRESHOLDS; ++k) {
-		u64 backup = thresholds[k];
-		thresholds[k] /= thresholds[NR_THRESHOLDS];
-		pr_warn("TS[%u]: %lld/%u (%llu)\n", k, thresholds[k],
-			ts_precision, backup);
-	}
-
-	pr_warn("Tuning finished\n");
+	free_fast_irq(RECODE_PMI);
 }
 
 static void recode_reset_data(void)
@@ -160,7 +133,7 @@ static void recode_reset_data(void)
 		for (pmc = 0; pmc < max_pmc_fixed; ++pmc)
 			per_cpu(pcpu_pmcs_snapshot.fixed[pmc], cpu) = 0;
 
-		per_cpu(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi], cpu) =
+		per_cpu(pcpu_pmcs_snapshot.fixed[1], cpu) =
 			PMC_TRIM(reset_period);
 
 		for (pmc = 0; pmc < max_pmc_general; ++pmc)
@@ -176,29 +149,14 @@ void recode_set_state(unsigned state)
 	if (old_state == recode_state)
 		return;
 
-	if (state == OFF) {
+	if (state == OFF && old_state != OFF) {
 		disable_pmc_on_system();
 		pr_info("Recode state: OFF\n");
-		return;
-	} else if (state == TUNING) {
-		/* Requires binding to one cpu */
-		/* Set threshold mode and activate PROFILE */
-		unsigned k = NR_THRESHOLDS + 1;
-		while (k--) {
-			thresholds[k] = 0;
-		}
-		set_exit_callback(tuning_finish_callback);
-		pr_warn("Recode ready for TUNING\n");
-	} else if (state == PROFILE) {
-		/* Reset DATA and set PROFILE mode */
-		recode_reset_data();
-		set_exit_callback(NULL);
-		pr_info("Recode ready for PROFILE\n");
 	} else if (state == SYSTEM) {
 		/* Reset DATA and set SYSTEM mode */
 		recode_reset_data();
 		pr_info("Recode ready for SYSTEM\n");
-	} else if (state == IDLE) {
+	}  else if (state == IDLE) {
 		pr_info("Recode is IDLE\n");
 	} else {
 		pr_warn("Recode invalid state\n");
@@ -211,272 +169,22 @@ void recode_set_state(unsigned state)
 
 static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 {
-	/* The system is alive, let inform the PMI handler */
-	this_cpu_write(pcpu_pmi_counter, 0);
-	
 	if (recode_state == SYSTEM || recode_state == IDLE) {
-		/* PMCs will be enabled inside pmc_evaluate_activity */
-		pmc_evaluate_activity(prev, prev_on, true);
-	} else if (recode_state == OFF) {
-		/* This is redundant, but it improves safety */
-		if (this_cpu_read(pcpu_pmcs_active))
-			disable_pmc_on_cpu();
-		return;
-	} else { 
-		/* PROFILE || TUNING */
-		/* Enable logging only for profiled tasks */
-		bool log = (recode_state != TUNING) && prev_on;
+		/* Just enable PMCs if they are disabled */
+		if (!this_cpu_read(pcpu_pmcs_active))
+			enable_pmc_on_cpu();
+
+		// TODO do something
+	} else {
+		/* Skip pmc-off CPUs and Kernel Threads */
 
 		/* Toggle PMI */
 		if (this_cpu_read(pcpu_pmcs_active) && !curr_on)
 			disable_pmc_on_cpu();
 
 		else if (!this_cpu_read(pcpu_pmcs_active) && curr_on)
-			// enable_pmc_on_cpu();
-			/* PMCs will be enabled inside pmc_evaluate_activity */
-			pmc_evaluate_activity(prev, log, true);
-			
-		else if (this_cpu_read(pcpu_pmcs_active))
-			pmc_evaluate_activity(prev, log, true);
+			enable_pmc_on_cpu();
 	}
-
-	/* Activate on previous task */
-	if (has_pending_mitigations(prev))
-		enable_mitigations_on_task(prev);
-
-	/* Enable mitigations */
-	LLC_flush(current);
-	mitigations_switch(prev, current);
-}
-
-static void enable_detection_statistics(struct task_struct *tsk)
-{
-	struct detect_stats *ds;
-
-	/* Skif if already allocated */
-	if (tsk->monitor_state & STATS_EN_MASK)
-		return;
-	
-	ds = kmalloc(sizeof(struct detect_stats), GFP_ATOMIC);
-
-	if (!ds) {
-		pr_warn("@%u] Cannot allocate statistics for pid %u\n",
-			smp_processor_id(), tsk->pid);
-		return;
-	}
-
-	/* Copy and safe truncate the task name */
-	memcpy(ds->comm, tsk->comm, sizeof(ds->comm));
-	ds->comm[sizeof(ds->comm) - 1] = '\0';
-
-	ds->pid = tsk->pid;
-	ds->tgid = tsk->tgid;
-
-	ds->nvcsw = tsk->nvcsw;
-	ds->nivcsw = tsk->nivcsw;
-	ds->pmis = 0;
-	ds->skpmis = 0;
-	ds->utime = tsk->utime;
-	ds->stime = tsk->stime;
-
-	/* Attach stats to task */
-	tsk->monitor_state |= STATS_EN_MASK;
-	tsk->monitor_data = (void *) ds;
-}
-
-static inline void update_detection_statisitcs(struct task_struct *tsk, bool skip)
-{
-	/* Skip KThreads */
-	if (!tsk->mm)
-		return;
-
-	if (!(tsk->monitor_state & STATS_EN_MASK))
-		return;
-
-	if (skip)
-		((struct detect_stats *)tsk->monitor_data)->skpmis++;
-	else
-		((struct detect_stats *)tsk->monitor_data)->pmis++;
-}	
-
-static void finalize_detection_statisitcs(struct task_struct *tsk)
-{
-	struct detect_stats *ds;
-
-	/* Skip KThreads */
-	if (!tsk->mm)
-		return;
-
-	/* Something went wrong */
-	if (!(tsk->monitor_state & STATS_EN_MASK))
-		return;
-
-	ds = (struct detect_stats *)tsk->monitor_data;
-
-	ds->nvcsw = tsk->nvcsw - ds->nvcsw;
-	ds->nivcsw = tsk->nivcsw - ds->nivcsw;
-	ds->utime = tsk->utime - ds->utime;
-	ds->stime = tsk->stime - ds->stime; 
-
-	tsk->monitor_state &= ~STATS_EN_MASK;
-	tsk->monitor_data = NULL;
-
-	/* Print all the values */
-	pr_warn("DETECTED pid %u (tgid %u): %s\n", ds->pid, ds->tgid, ds->comm);
-	printk(" **   VCSW --> %u\n", ds->nvcsw);
-	printk(" **  IVCSW --> %u\n", ds->nivcsw);
-	printk(" **  UTIME --> %llu\n", ds->utime);
-	printk(" **  STIME --> %llu\n", ds->stime);
-	printk(" **   PMIs --> %u\n", ds->pmis);
-	printk(" ** skPMIs --> %u\n", ds->skpmis);
-	printk(" ****  END OF REPORT  ****\n");
-	kfree(ds);
-}
-
-static bool evaluate_pmcs(struct task_struct *tsk,
-			  struct pmcs_snapshot *snapshot)
-{
-	/* Skip KThreads */
-	if (!tsk->mm)
-		goto end;
-
-	if (recode_state == IDLE) {
-		/* Do nothing */
-	} else if (recode_state == TUNING) {
-		thresholds[0] += DM0(ts_precision, snapshot);
-		thresholds[1] += DM1(ts_precision, snapshot);
-		thresholds[2] += DM2(ts_precision, snapshot);
-		thresholds[3] += DM3(ts_precision, snapshot);
-		// thresholds[4] += DM4(ts_precision, snapshot);
-		thresholds[NR_THRESHOLDS]++;
-
-		pr_warn("Got sample %llu\n", thresholds[0]);
-	} else {
-		if (!has_mitigations(tsk)) {
-			// TODO Remove - Init task_struct
-			if (MSK_16(tsk->monitor_state) > ts_window + 1)
-				tsk->monitor_state &= ~(BIT(16) - 1);
-
-			if ((CHECK_LESS_THAN_TS(thresholds[0],
-						DM0(ts_precision, snapshot),
-						ts_precision_5) &&
-			     CHECK_LESS_THAN_TS(thresholds[1],
-						DM1(ts_precision, snapshot),
-						ts_precision_5) &&
-			     CHECK_MORE_THAN_TS(thresholds[2],
-						DM2(ts_precision, snapshot),
-						ts_precision_5) &&
-			     CHECK_MORE_THAN_TS(thresholds[3],
-						DM3(ts_precision, snapshot),
-						ts_precision_5)) ||
-			    /* P4 */
-			    CHECK_LESS_THAN_TS(thresholds[4],
-					       DM3(ts_precision, snapshot),
-					       ts_precision_5)) {
-				tsk->monitor_state += ts_alpha;
-				// pr_info("[++] %s (PID %u): %u\n", tsk->comm,
-				// 	tsk->pid, tsk->monitor_state);
-
-				/* Enable statitics for this task */
-				enable_detection_statistics(tsk);
-			} else if (MSK_16(tsk->monitor_state) > 0) {
-				tsk->monitor_state -= ts_beta;
-				// pr_info("[--] %s (PID %u): %u\n", tsk->comm,
-				// 	tsk->pid, tsk->monitor_state);
-			}
-
-			if (MSK_16(tsk->monitor_state) > ts_window) {
-				// pr_warn("[FLAG] Detected %s (PID %u): %u\n",
-				// 	tsk->comm, tsk->pid,
-				// 	tsk->monitor_state);
-				// pr_warn("0: %llu, 1: %llu, 2: %llu, 3/4: %llu\n",
-				// 	DM0(ts_precision, snapshot),
-				// 	DM1(ts_precision, snapshot),
-				// 	DM2(ts_precision, snapshot),
-				// 	DM3(ts_precision, snapshot));
-				/* Close statitics for this task */
-				atomic_inc(&detected_theads);
-				finalize_detection_statisitcs(tsk);
-				return true;
-			}
-		}
-	}
-end:
-	return false;
-}
-
-void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
-{
-	unsigned k;
-	unsigned cpu = get_cpu();
-	pmc_ctr old_fixed1, new_fixed1;
-	struct pmcs_snapshot old_pmcs;
-
-	if (pmc_off)
-		disable_pmc_on_cpu();
-
-	/* TODO - This copy is implementation-dependant */
-	memcpy(&old_pmcs, per_cpu_ptr(&pcpu_pmcs_snapshot, cpu),
-	       sizeof(struct pmcs_snapshot));
-
-	/* Read PMCs' value */
-	read_all_pmcs(per_cpu_ptr(&pcpu_pmcs_snapshot, cpu));
-
-	/* 
-	 * What if a PMI occurs and the IRQs are OFF?
-	 * 
-	 * This function is executed at the end of teh context switch and in the
-	 * PMI routine. The context switch may occur while the PMC overflows and
-	 * a wrong value would be read. We need to adjust such a value with the
-	 * reset_period.
-	 * 
-	 * 1. Do we need to check if there is a pending PMI?
-	 * 2. Can we just look for and older value bigger than the new one? 
-	 */
-
-	/* Implementing Solution 2. */
-	old_fixed1 = old_pmcs.fixed[fixed_pmc_pmi];
-	new_fixed1 = per_cpu(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi], cpu);
-
-	for_each_pmc(k, max_pmc_fixed + max_pmc_general)
-	{
-		old_pmcs.pmcs[k] =
-			PMC_TRIM(per_cpu(pcpu_pmcs_snapshot.pmcs[k], cpu) -
-				 old_pmcs.pmcs[k]);
-	}
-
-	/* TSC is not computed and it is set to "this" moment */
-	old_pmcs.tsc = per_cpu(pcpu_pmcs_snapshot.tsc, cpu);
-
-	if (old_fixed1 >= new_fixed1) {
-		old_pmcs.fixed[1] =
-			PMC_TRIM(((BIT_ULL(48) - 1) - old_fixed1) + new_fixed1);
-		this_cpu_add(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi],
-			     reset_period + new_fixed1);
-	} else {
-		old_pmcs.fixed[fixed_pmc_pmi] = new_fixed1 - old_fixed1;
-	}
-	
-	if (log)
-		log_sample(per_cpu(pcpu_pmc_logger, cpu), &old_pmcs);
-
-	update_detection_statisitcs(tsk, false);
-
-	/* Skip small samples */
-	if ((per_cpu(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi], cpu) - 
-	    old_pmcs.fixed[fixed_pmc_pmi]) > 0xFFFF) {
-		if(evaluate_pmcs(tsk, &old_pmcs)) {
-			/* Delay activation if we are inside the PMI */
-			request_mitigations_on_task(tsk, pmc_off);
-		}
-	}
-	else {
-		update_detection_statisitcs(tsk, true);
-	}
-
-	if (pmc_off)
-		enable_pmc_on_cpu();
-	put_cpu();
 }
 
 /* Register thread for profiling activity  */
