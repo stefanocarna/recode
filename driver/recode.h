@@ -55,7 +55,8 @@ enum recode_state {
 	TUNING = 1,
 	PROFILE = 2,
 	SYSTEM = 3,
-	IDLE = 4, // Useless
+	PT_ONLY = 4,
+	IDLE = 5,
 };
 
 extern enum recode_state __read_mostly recode_state;
@@ -123,6 +124,11 @@ extern void disable_pmc_on_system(void);
 extern void get_machine_configuration(void);
 extern void read_all_pmcs(struct pmcs_snapshot *snapshot);
 extern void setup_pmc_on_system(struct pmc_evt_sel *pmc_cfgs);
+
+extern void enable_pt_on_cpu(void *dummy);
+extern void disable_pt_on_cpu(void *dummy);
+
+void decode_pt_buffer(void);
 
 /* Detection metrics */
 /* L2_miss / L1_miss */

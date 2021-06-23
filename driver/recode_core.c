@@ -118,7 +118,8 @@ void recode_pmc_fini(void)
 	while (atomic_read(&active_pmis))
 		;
 
-	free_fast_irq(RECODE_PMI);
+	if (free_fast_irq(RECODE_PMI))
+		pr_warn("Something wrong while freeing the PMI vector: %u\n", RECODE_PMI);
 }
 
 static void recode_reset_data(void)
@@ -141,6 +142,8 @@ static void recode_reset_data(void)
 	}
 }
 
+#define PT_CPU 1
+
 void recode_set_state(unsigned state)
 {
 	enum recode_state old_state = recode_state;
@@ -152,12 +155,16 @@ void recode_set_state(unsigned state)
 	if (state == OFF && old_state != OFF) {
 		disable_pmc_on_system();
 		pr_info("Recode state: OFF\n");
+		smp_call_function_single(PT_CPU, disable_pt_on_cpu, NULL, 1);
 	} else if (state == SYSTEM) {
 		/* Reset DATA and set SYSTEM mode */
 		recode_reset_data();
 		pr_info("Recode ready for SYSTEM\n");
 	}  else if (state == IDLE) {
 		pr_info("Recode is IDLE\n");
+	} else if (state == PT_ONLY) {
+		pr_info("Recode is PT_ONLY\n");
+		smp_call_function_single(PT_CPU, enable_pt_on_cpu, NULL, 1);
 	} else {
 		pr_warn("Recode invalid state\n");
 		recode_state = old_state;

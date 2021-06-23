@@ -14,6 +14,9 @@ unsigned long __read_mostly max_pmi_before_ctx = (1ULL << 13); // 8192
 int pmi_recode(void)
 {
 	u64 global;
+	u64 pt_ctl;
+	u64 pt_status;
+
 	unsigned handled = 0, loops = 0;
 	// unsigned long flags = 0;
 	/* TODO Debug */
@@ -32,18 +35,32 @@ int pmi_recode(void)
 
 	/* Read the PMCs state */
 	rdmsrl(MSR_CORE_PERF_GLOBAL_STATUS, global);
+	rdmsrl(MSR_IA32_RTIT_CTL, pt_ctl);
+	rdmsrl(MSR_IA32_RTIT_STATUS, pt_status);
 
+	pr_warn("[%u]PMI - MSR_IA32_RTIT_CTL: %llx\n", 
+		smp_processor_id(), pt_ctl);
+
+	pr_warn("[%u]PMI - MSR_IA32_RTIT_STATUS: %llx\n", 
+		smp_processor_id(), pt_status);
+
+	if (recode_state == PT_ONLY)
+		goto no_pmi;
+		
 	/* Nothing to do here */
 	if (!global) {
-		// pr_info("[%u] Got PMI %llx - NO GLOBAL - FIXED%u %llx\n", 
-		// smp_processor_id(), global, fixed_pmc_pmi,
-		// READ_FIXED_PMC(fixed_pmc_pmi));
+		pr_info("[%u] Got PMI %llx - NO GLOBAL - FIXED%u %llx\n", 
+		smp_processor_id(), global, fixed_pmc_pmi,
+		READ_FIXED_PMC(fixed_pmc_pmi));
 		goto no_pmi;
 	}
 
+	pr_warn("[%u]PMI - MSR_CORE_PERF_GLOBAL_STATUS: %llx\n", 
+		 smp_processor_id(), global);
+
 	/* This IRQ is not originated from PMC overflow */
 	if(!(global & (PERF_GLOBAL_CTRL_FIXED0_MASK << fixed_pmc_pmi))) {
-		// pr_warn("Something triggered pmc_detection_interrupt line\nMSR_CORE_PERF_GLOBAL_STATUS: %llx\n", global);
+		pr_warn("Something triggered pmc_detection_interrupt line\nMSR_CORE_PERF_GLOBAL_STATUS: %llx\n", global);
 		goto no_pmi;
 	}
 	

@@ -55,7 +55,7 @@ def parser_init():
         "--state",
         type=str,
         required=False,
-        choices=["off", "tuning", "profile", "system", "idle", "reset"],
+        choices=["off", "tuning", "profile", "system", "idle", "pt", "reset"],
         help="Set the Recode state: (on) enabled, (off) disabled, (reset) off -> on",
     )
 
@@ -260,8 +260,10 @@ def action_state(action):
         value = "2"
     elif action == "system":
         value = "3"
-    elif action == "idle":
+    elif action == "pt":
         value = "4"
+    elif action == "idle":
+        value = "5"
     elif action == "reset":
         action_state("off")
         value = "2"
