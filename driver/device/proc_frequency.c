@@ -37,11 +37,11 @@ static ssize_t frequency_write(struct file *filp,
 	return count;
 }
 
-struct file_operations frequency_proc_fops = {
-	.open = frequency_open,
-	.read = seq_read,
-	.write = frequency_write,
-	.release = single_release,
+struct proc_ops frequency_proc_fops = {
+	.proc_open = frequency_open,
+	.proc_read = seq_read,
+	.proc_write = frequency_write,
+	.proc_release = single_release,
 };
 
 int register_proc_frequency(void)

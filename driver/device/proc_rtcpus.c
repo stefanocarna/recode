@@ -134,14 +134,14 @@ struct proc_ops cpu_logger_proc_fops = {
 	.proc_release = seq_release,
 };
 
-int register_proc_cpus(void)
+int register_proc_rtcpus(void)
 {
 	unsigned cpu;
 	char name[17];
 	struct proc_dir_entry *dir;
 	struct proc_dir_entry *tmp_dir;
 
-	dir = proc_mkdir(GET_PATH("cpus"), NULL);
+	dir = proc_mkdir(GET_PATH("rtcpus"), NULL);
 
 	for_each_online_cpu (cpu) {
 		sprintf(name, "cpu%u", cpu);

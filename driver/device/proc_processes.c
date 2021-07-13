@@ -1,4 +1,5 @@
  #include "proc.h"
+ #include <linux/vmalloc.h>
 
 /* 
  * Proc and Fops related to Tracked processes
@@ -27,7 +28,7 @@ static ssize_t processes_write(struct file *file,
 		goto err;
 	}
 
-        attach_process(ts->tgid);
+        attach_process(ts->pid);
 
 // end:
 	put_task_struct(ts);
@@ -38,8 +39,8 @@ err:
 	return -1;
 }
 
-struct file_operations processes_proc_fops = {
-    .write = processes_write,
+struct proc_ops processes_proc_fops = {
+    .proc_write = processes_write,
 };
 
 

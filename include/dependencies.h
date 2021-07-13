@@ -8,21 +8,17 @@ extern int idt_patcher_install_entry(unsigned long handler, unsigned vector, uns
 
 typedef void ctx_func(struct task_struct *prev, bool prev_on, bool curr_on);
 
-extern void switch_hook_pause(void);
+extern void switch_hook_set_state_enable(bool state);
 
-extern void switch_hook_resume(void);
+extern void switch_hook_set_system_wide_mode(bool mode);
 
-extern void switch_hook_set_mode(unsigned mode);
+extern void set_hook_callback(ctx_func *hook);
 
-extern int hook_register(ctx_func *hook);
+extern int tracker_add(pid_t id);
 
-extern void hook_unregister(void);
+extern int tracker_del(pid_t id);
 
-extern int pid_register(pid_t pid);
-
-extern int pid_unregister(pid_t pid);
-
-extern bool is_pid_tracked(pid_t pid);
+extern bool query_tracker(pid_t id);
 
 extern unsigned get_tracked_pids(void);
 

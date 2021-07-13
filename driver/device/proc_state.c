@@ -23,8 +23,8 @@ err:
 	return -1;
 }
 
-struct file_operations state_proc_fops = {
-    .write = state_write,
+struct proc_ops state_proc_fops = {
+    .proc_write = state_write,
 };
 
 

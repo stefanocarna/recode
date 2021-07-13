@@ -2,7 +2,6 @@
 #ifndef _PROC_H
 #define _PROC_H
 
-#include <linux/dynamic-mitigations.h>
 #include <linux/hashtable.h>
 #include <linux/percpu-defs.h>
 #include <linux/pid.h>
@@ -34,10 +33,8 @@ extern void fini_proc(void);
 extern int register_proc_cpus(void);
 extern int register_proc_events(void);
 extern int register_proc_frequency(void);
-extern int register_proc_mitigations(void);
 extern int register_proc_processes(void);
 extern int register_proc_state(void);
 extern int register_proc_statistics(void);
-extern int register_proc_thresholds(void);
 
 #endif /* _PROC_H */

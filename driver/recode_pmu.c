@@ -1,7 +1,13 @@
-#include <linux/sched.h>
+#include <asm/apic.h>
 #include <asm/perf_event.h>
+#include <linux/sched.h>
+#include <linux/slab.h>
+
 
 #include "recode.h"
+#include "recode_pmu.h"
+#include "recode_pmi.h"
+#include "recode_config.h"
 
 u64 perf_global_ctrl = 0xFULL | BIT_ULL(32) | BIT_ULL(33) | BIT_ULL(34);
 u64 fixed_ctrl = 0;
@@ -14,6 +20,17 @@ unsigned __read_mostly max_pmc_fixed = 3;
 unsigned __read_mostly max_pmc_general = 4;
 
 DEFINE_PER_CPU(bool ,pcpu_pmcs_active) = false;
+
+pmc_evt_code *pmc_events;
+
+/* Internal PMC configuration cache */
+struct pmc_evt_sel *pmc_cfgs = NULL;
+
+
+void cleanup_pmc_on_system(void)
+{
+	kfree(pmc_cfgs);
+}
 
 void get_machine_configuration(void)
 {
@@ -48,6 +65,7 @@ void get_machine_configuration(void)
 
 static void __setup_pmc_on_cpu(void *pmc_cfgs)
 {
+#ifndef CONFIG_RUNNING_ON_VM
 	u64 msr;
 	unsigned k;
 	struct pmc_evt_sel *cfgs = (struct pmc_evt_sel *) pmc_cfgs;
@@ -58,7 +76,10 @@ static void __setup_pmc_on_cpu(void *pmc_cfgs)
 	}
 
 	/* Refresh APIC entry */
-	apic_write(APIC_LVTPC, RECODE_PMI);
+	if (recode_pmi_vector == NMI)
+		apic_write(APIC_LVTPC, LVT_NMI);
+	else
+		apic_write(APIC_LVTPC, RECODE_PMI);
 
 	/* Clear a possible stale state */
 	rdmsrl(MSR_CORE_PERF_GLOBAL_STATUS, msr);
@@ -73,22 +94,31 @@ static void __setup_pmc_on_cpu(void *pmc_cfgs)
 	}
 
 	for (k = 0; k < max_pmc_fixed; ++k) {
+		/**
+		 * bits: 3   2   1   0
+		 * 	PMI, 0, USR, OS
+		 */
 		if (k == fixed_pmc_pmi) {
 			WRITE_FIXED_PMC(k, reset_period);
-			fixed_ctrl |= (0xB << (k * 4)); /* 1011 -> PMI, USR, OS */
+			/* Set PMI */
+			fixed_ctrl |= (BIT(3) << (k * 4)); 
+			if (params_cpl_usr)
+				fixed_ctrl |= (BIT(1) << (k * 4));
+			if (params_cpl_usr)
+				fixed_ctrl |= (BIT(0) << (k * 4));
 		} else {
 			WRITE_FIXED_PMC(k, 0ULL);
-			fixed_ctrl |= (0x3 << (k * 4)); /* 0011 -> USR, OS */
+			fixed_ctrl |= ((BIT(0) | BIT(1)) << (k * 4)); /* 0011 -> USR, OS */
 		}
 	}
 
 	/* Setup FIXED PMCs */
 	wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, fixed_ctrl);
-}
 
-void setup_pmc_on_system(struct pmc_evt_sel *pmc_cfgs)
-{
-	on_each_cpu(__setup_pmc_on_cpu, pmc_cfgs, 1);
+	debug_pmu_state();
+#else
+	pr_warn("CONFIG_RUNNING_ON_VM is enabled. PMCs are ignored\n");
+#endif
 }
 
 void read_all_pmcs(struct pmcs_snapshot *snapshot)
@@ -126,7 +156,9 @@ static void __enable_pmc_on_cpu(void *dummy)
 		goto exit;
 	}
 	per_cpu(pcpu_pmcs_active, cpu) = true;
+#ifndef CONFIG_RUNNING_ON_VM
 	wrmsrl(MSR_CORE_PERF_GLOBAL_CTRL, perf_global_ctrl);
+#endif
 exit:
 	put_cpu();
 }
@@ -134,7 +166,9 @@ exit:
 static void __disable_pmc_on_cpu(void *dummy)
 {
 	per_cpu(pcpu_pmcs_active, get_cpu()) = false;
+#ifndef CONFIG_RUNNING_ON_VM
 	wrmsrl(MSR_CORE_PERF_GLOBAL_CTRL, 0ULL);
+#endif
 	put_cpu();
 }
 
@@ -156,4 +190,63 @@ void inline __attribute__((always_inline)) enable_pmc_on_system(void)
 void inline __attribute__((always_inline)) disable_pmc_on_system(void)
 {
 	on_each_cpu(__disable_pmc_on_cpu, NULL, 1);
+}
+
+void debug_pmu_state(void)
+{
+	u64 msr;
+	unsigned cpu = get_cpu();
+
+	pr_info("Init PMU debug on core %u\n", cpu);
+
+	rdmsrl(MSR_CORE_PERF_GLOBAL_STATUS, msr);
+	pr_info("MSR_CORE_PERF_GLOBAL_STATUS: %llx\n", msr);
+
+	rdmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, msr);
+	pr_info("MSR_CORE_PERF_FIXED_CTR_CTRL: %llx\n", msr);
+
+	pr_info("GP 0: %llx\n", QUERY_GENERAL_PMC(0));
+	pr_info("GP 1: %llx\n", QUERY_GENERAL_PMC(1));
+	pr_info("GP 2: %llx\n", QUERY_GENERAL_PMC(2));
+	pr_info("GP 3: %llx\n", QUERY_GENERAL_PMC(3));
+
+	pr_info("Fini PMU debug on core %u\n", cpu);
+
+	put_cpu();
+}
+
+
+int setup_pmc_on_system(pmc_evt_code *codes)
+{
+	unsigned k;
+
+	if (!pmc_cfgs) {
+		pmc_cfgs = kzalloc(sizeof(struct pmc_evt_sel) * max_pmc_general, GFP_KERNEL);
+		if (!pmc_cfgs) {
+			pr_err("Cannot allocate memory for PMC configs\n");
+			return -ENOMEM;
+		}
+	}
+
+	if (!codes)
+		goto old_conf;
+
+	// TODO - Check memory leaks
+	pmc_events = codes;
+
+	for (k = 0; k < max_pmc_general; ++k) {
+		pmc_cfgs[k].perf_evt_sel = codes[k];
+
+		/* PMCs setup */
+		pmc_cfgs[k].usr = !!(params_cpl_usr);
+		pmc_cfgs[k].os = !!(params_cpl_os);
+		pmc_cfgs[k].pmi = 0;
+		pmc_cfgs[k].en = 1;
+	}
+
+old_conf:
+	on_each_cpu(__setup_pmc_on_cpu, pmc_cfgs, 1);
+	pr_warn("PMCs setup on all cores\n");
+
+	return 0;
 }

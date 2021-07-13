@@ -3,13 +3,14 @@
  */
 
 #include "proc.h"
+#include "../recode_config.h"
 
 static int sampling_events_show(struct seq_file *m, void *v)
 {
 	unsigned i;
 
 	for (i = 0; i < max_pmc_general; i++) {
-		seq_printf(m, "%x\t", pmc_events[i] & 0xffff);
+		seq_printf(m, "%llx\t", pmc_events[i] & 0xffff);
 	}
 	seq_printf(m, "\n");
 
@@ -33,7 +34,7 @@ static ssize_t events_write(struct file *filp, const char __user *buffer_user,
 	if (err)
 		return err;
 	while (((p = strsep(&buffer, ",")) != NULL) && i < max_pmc_general) {
-		sscanf(p, "%x", &pmc_events[i]);
+		sscanf(p, "%llx", &pmc_events[i]);
 		i++;
 	}
 	while (i < max_pmc_general) {
@@ -44,11 +45,11 @@ static ssize_t events_write(struct file *filp, const char __user *buffer_user,
 	return count;
 }
 
-struct file_operations events_proc_fops = {
-	.open = events_open,
-	.read = seq_read,
-	.write = events_write,
-	.release = single_release,
+struct proc_ops events_proc_fops = {
+	.proc_open = events_open,
+	.proc_read = seq_read,
+	.proc_write = events_write,
+	.proc_release = single_release,
 };
 
 int register_proc_events(void)
