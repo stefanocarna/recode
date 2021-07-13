@@ -4,6 +4,17 @@ MODULES = dependencies/ driver/
 
 obj-y += $(MODULES)
 
+EXTRA_CFLAGS :=
+EXTRA_CFLAGS +=	-std=gnu99					\
+		-fno-builtin-memset				\
+		-Werror						\
+		-Wframe-larger-than=400				\
+		-Wno-declaration-after-statement		\
+		$(INCLUDES)
+
+.PHONY: modules modules_install clean debug insert remove reboot
+
+
 modules:
 # 	@echo $(wildcard ./driver/*.c)
 	@$(MAKE) -w -C $(KROOT) M=$(PWD) modules

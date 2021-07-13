@@ -101,3 +101,5 @@ __pycache__/
 
 # VS Code files
 *.code-workspace
+tools/attacks.zip
+tools/swap.py
