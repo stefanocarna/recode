@@ -10,7 +10,7 @@
 
 #define RECODE_PMI 239
 
-extern atomic_t active_pmis;
+// extern atomic_t active_pmis;
 
 int pmi_nmi_setup(void);
 void pmi_nmi_cleanup(void);

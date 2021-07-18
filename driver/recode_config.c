@@ -1,9 +1,14 @@
 #include "recode.h"
-#include "recode_pmu.h"
+#include "pmu/pmu.h"
 #include "recode_config.h"
 #include "pmc_events.h"
 
-unsigned params_cpl_os = 0;
+#define SAMPLING_PERIOD (BIT_ULL(24) - 1)
+
+u64 __read_mostly reset_period = PMC_TRIM(~SAMPLING_PERIOD);
+unsigned __read_mostly fixed_pmc_pmi = 2; // PMC with PMI active
+
+unsigned params_cpl_os = 1;
 unsigned params_cpl_usr = 1;
 
 enum recode_pmi_vector recode_pmi_vector = NMI;
@@ -47,5 +52,3 @@ pmc_evt_code pmc_events_tma_l2[8] = {
 
 // };
 
-
-u64 reset_period = (~0xFFFFFFULL & (BIT_ULL(48) - 1));

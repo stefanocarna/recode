@@ -5,8 +5,8 @@
 
 
 #include "recode.h"
-#include "recode_pmu.h"
-#include "recode_pmi.h"
+#include "pmu/pmu.h"
+#include "pmu/pmi.h"
 #include "recode_config.h"
 
 u64 perf_global_ctrl = 0xFULL | BIT_ULL(32) | BIT_ULL(33) | BIT_ULL(34);
@@ -15,7 +15,6 @@ u64 fixed_ctrl = 0;
 // u64 fixed_ctrl = 0x3A3; // Enable USR only
 // u64 fixed_ctrl = 0x393; // Enable OS only
 
-unsigned __read_mostly fixed_pmc_pmi = 1; // PMC with PMI active
 unsigned __read_mostly max_pmc_fixed = 3;
 unsigned __read_mostly max_pmc_general = 4;
 
@@ -46,21 +45,16 @@ void get_machine_configuration(void)
 		return;
 
 	version = eax.split.version_id;
-
-	pr_info("PMU CONF:\n");
-	// pr_info("Version: %u\n", version);
-	pr_info("-- # Counters: %u\n", eax.split.num_counters);
-	// pr_info("Counter's Bits: %u\n", eax.split.bit_width);
-	// pr_info("Counter's Mask: %llx\n", (1ULL << eax.split.bit_width) - 1);
-
-	// pr_info("Evt's Bits: %u\n", ebx.full);
-	// pr_info("Evt's Mask: %x\n", eax.split.mask_length);
-
-	pr_info("-- # PEBS EVTs: %x\n",
-		min_t(unsigned, 8, eax.split.num_counters));
-
 	max_pmc_general = eax.split.num_counters;
-	perf_global_ctrl = (BIT(max_pmc_general) - 1) | BIT(32) | BIT(33) | BIT(34);
+	perf_global_ctrl = (BIT(max_pmc_general) - 1) | 
+	                    BIT(32) | BIT(33) |BIT(34);
+
+	pr_info("PMU Version: %u\n", version);
+	pr_info(" - NR Counters: %u\n", eax.split.num_counters);
+	pr_info(" - Counter's Bits: %u\n", eax.split.bit_width);
+	pr_info(" - Counter's Mask: %llx\n", (1ULL << eax.split.bit_width) - 1);
+	pr_info(" - NR PEBS' events: %x\n",
+		min_t(unsigned, 8, eax.split.num_counters));
 }
 
 static void __setup_pmc_on_cpu(void *pmc_cfgs)
@@ -115,7 +109,7 @@ static void __setup_pmc_on_cpu(void *pmc_cfgs)
 	/* Setup FIXED PMCs */
 	wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, fixed_ctrl);
 
-	debug_pmu_state();
+	// debug_pmu_state();
 #else
 	pr_warn("CONFIG_RUNNING_ON_VM is enabled. PMCs are ignored\n");
 #endif
@@ -230,7 +224,8 @@ int setup_pmc_on_system(pmc_evt_code *codes)
 
 	if (!codes)
 		goto old_conf;
-
+		
+	// TODO - compact setup
 	// TODO - Check memory leaks
 	pmc_events = codes;
 

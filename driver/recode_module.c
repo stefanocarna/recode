@@ -6,9 +6,8 @@
 
 static __init int recode_init(void)
 {
-#ifdef DEBUG
-	pr_info("Mounting with DEBUG defined\n");
-#endif
+	pr_debug("Mounting with DEBUG enabled\n");
+	
 	if(recode_data_init()) {
 		pr_err("Cannot initialize data\n");
 		goto no_data;

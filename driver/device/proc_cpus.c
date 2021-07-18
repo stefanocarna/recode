@@ -4,57 +4,52 @@
 #include "proc.h"
 #include "../recode_config.h"
 
+extern unsigned int tsc_khz;
+
 /* 
  * Proc and Fops related to CPU device
  */
 
 static void *cpu_logger_seq_start(struct seq_file *m, loff_t *pos)
 {
-	u64 *i;
 	unsigned k;
 	struct pmc_logger *data;
 
 	data = (struct pmc_logger *)PDE_DATA(file_inode(m->file));
-	if (!data || !data->rd.head)
-		goto err;
+	if (!data)
+		goto no_data;
+	
+	if (!check_log_sample(data))
+		goto no_data;
 
-	// if (*pos >= data->idx)
-	// 	goto err;
-	i = vmalloc(sizeof(unsigned));
-	*i = (*pos);
-
-	/* Print labels */
-	if (!(*i)) {
+	/* Print header */
+	if (!(*pos)) {
 		seq_printf(m, "# PID,TIME,TSC,INST,CYCLES,TSC_CYCLES");
-		for (k = 0; k < max_pmc_general; ++k) { 
+		for (k = 0; k < max_pmc_general; ++k)
 			if (pmc_events[k]) {
 				seq_printf(m, ",%llx", pmc_events[k]);
 			}
-		}
 		seq_printf(m, "\n");
 	}
 
-	return i;
-err:
+	return pos;
+
+no_data:
+	pr_warn("Cannot read data: %u\n", !data->rd.head);
 	return NULL;
 }
 
 static void *cpu_logger_seq_next(struct seq_file *m, void *v, loff_t *pos)
 {
-	unsigned *i;
 	struct pmc_logger *data;
 	data = (struct pmc_logger *)PDE_DATA(file_inode(m->file));
-	i = (unsigned *)v;
+	
+	(*pos)++;
 
-	if (!data->rd.head)
+	if (!check_log_sample(data))
 		goto err;
 
-	// if (*pos >= data->idx || *i >= data->idx)
-	// 	goto err;
-
-	(*i)++;
-
-	return i;
+	return pos;
 err:
 	return NULL;
 }
@@ -62,49 +57,31 @@ err:
 static int cpu_logger_seq_show(struct seq_file *m, void *v)
 {
 	u64 time;
-	unsigned j;
 	unsigned k;
-	unsigned *i;
 	struct pmc_logger *data;
-	struct pmcs_snapshot ps;
-	struct pmcs_snapshot_ring *ring;
+	struct pmcs_snapshot *sample;
 	
 	data = (struct pmc_logger *)PDE_DATA(file_inode(m->file));
-	ring = data->rd.head;
-	i = (unsigned *)v;
 
-	if (!i || !ring)
+	if (!v)
 		goto err;
-
-	// /* Print labels */
-	// if (!(*i)) {
-	// 	seq_printf(m, "# PID,TIME,TSC,INST,CYCLES,TSC_CYCLES");
-	// 	for (k = 0; k < max_pmc_general; ++k) { 
-	// 		seq_printf(m, ",%llx", pmc_events[k]);
-	// 	}
-	// 	seq_printf(m, "\n");
-	// }
-
-	/* Print the whole ring */
-	for (j = 0; j < ring->length; ++j) {
-		ps = ring->buff[j];
-		// | pid | time | tsc | fixed | general | usr | prof |
-		/* Compute milliseconds */
-		time = ps.tsc; // native_sched_clock_from_tsc(ps.tsc) / 1000000;
-		seq_printf(m, "%u,%llu,%llu,%llu,%llu,%llu", 111, time, ps.tsc,
-			ps.fixed[0], ps.fixed[1], ps.fixed[2]);
-
-		for (k = 0; k < max_pmc_general; ++k) {
-			if (pmc_events[k]) {
-				seq_printf(m, ",%llu", ps.general[k]);
-			}
-		}
-		// seq_printf(m, ",%u,%u\n", 1, 1);
-		seq_printf(m, "\n");
-	}
-
-	push_ps_ring(&data->chain, pop_ps_ring(&data->rd));
 		
+	sample = read_log_sample(data);
+
+	if (!sample)
+		goto err;
+	
+	time = sample->tsc / tsc_khz;
+	seq_printf(m, "%u,%llu,%llu,%llu,%llu,%llu", 111, time, sample->tsc,
+		sample->fixed[0], sample->fixed[1], sample->fixed[2]);
+
+	for (k = 0; k < max_pmc_general; ++k) {
+		if (pmc_events[k]) {
+			seq_printf(m, ",%llu", sample->general[k]);
+		}
+	}
+	seq_printf(m, "\n");
+	
 	return 0;
 err:
 	return -1;

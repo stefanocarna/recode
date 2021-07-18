@@ -33,7 +33,6 @@ extern u64 perf_global_ctrl;
 
 extern pmc_evt_code *pmc_events;
 
-extern unsigned __read_mostly fixed_pmc_pmi;
 extern unsigned __read_mostly max_pmc_fixed;
 extern unsigned __read_mostly max_pmc_general;
 

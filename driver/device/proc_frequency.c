@@ -1,5 +1,6 @@
 #include "proc.h"
 
+#include "recode_config.h"
 /* 
  * Proc and Fops related to PMC period
  */

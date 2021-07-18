@@ -1,5 +1,5 @@
 #include "recode.h"
-#include "recode_pmu.h"
+#include "pmu/pmu.h"
 
 #include "pmc_events.h"
 

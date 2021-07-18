@@ -16,8 +16,8 @@
 #include "device/proc.h"
 
 #include "recode.h"
-#include "recode_pmi.h"
-#include "recode_pmu.h"
+#include "pmu/pmi.h"
+#include "pmu/pmu.h"
 #include "recode_config.h"
 
 DEFINE_PER_CPU(struct pmcs_snapshot, pcpu_pmcs_snapshot) = { 0 };
@@ -25,6 +25,7 @@ DEFINE_PER_CPU(bool, pcpu_last_ctx_snapshot) = false;
 
 enum recode_state __read_mostly recode_state = OFF;
 
+atomic_t on_samples_flushing = ATOMIC_INIT(0);
 
 DEFINE_PER_CPU(struct pmcs_snapshot, pcpu_pmc_snapshot_ctx);
 DEFINE_PER_CPU(struct pmc_logger *, pcpu_pmc_logger);
@@ -137,78 +138,15 @@ static void recode_reset_data(void)
 	}
 }
 
-void recode_set_state(unsigned state)
-{
-	enum recode_state old_state = recode_state;
-	recode_state = state;
-
-	if (old_state == recode_state)
-		return;
-
-	if (state == OFF) {
-		pr_info("Recode state: OFF\n");
-		disable_pmc_on_system();
-		return;
-	} if (state == PROFILE) {
-		/* Reset DATA and set PROFILE mode */
-		pr_info("Recode ready for PROFILE\n");
-		recode_reset_data();
-	} else if (state == SYSTEM) {
-		/* Reset DATA and set SYSTEM mode */
-		pr_info("Recode ready for SYSTEM\n");
-		recode_reset_data();
-	} else {
-		pr_warn("Recode invalid state\n");
-		recode_state = old_state;
-		return;
-	}
-
-	/* Use the cached value */
-	pr_warn("C4\n");
-	setup_pmc_on_system(NULL);
-	pr_warn("C5\n");
-}
-
-
-void pmi_function(unsigned cpu)
-{
-	unsigned log = 0;
-	// pr_warn("[%u] PMI\n", cpu);
-	/* TODO Fix - query_tracker causes system hang */
-	log = (recode_state != TUNING) && query_tracker(current->pid);
-	log |= recode_state == SYSTEM;
-	if (log) {
-		// pr_warn("[%u] PMI\n", smp_processor_id());
-		pmc_evaluate_activity(current, log, false);
-	}
-}
-
-#define SFACTOR 100
-#define MTA_PIPELINE_WIDTH 4
-
-unsigned randoms [10] = {23, 12, 44, 55, 21, 62, 17, 33, 52, 41};
-unsigned rnd_idx = 0;
-
-
 static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 {
-	// unsigned k;
 	unsigned cpu = get_cpu();
-	// u64 mta_frontend;
-	// u64 mta_backend;
-	// u64 mta_bad_spec;
-	// u64 mta_retiring;
-	// u64 mta_slots; 
-	// u64 mta_upc; 
-	// u64 msr;
-
-	// struct pmcs_snapshot pmcs;
 
 	switch (recode_state) {
 	case OFF:
 		if (this_cpu_read(pcpu_pmcs_active))
 			disable_pmc_on_cpu();
-		goto end;
+		break;
 	case SYSTEM:
 		if (!this_cpu_read(pcpu_pmcs_active))
 			enable_pmc_on_cpu();
@@ -226,84 +164,81 @@ static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 		disable_pmc_on_cpu();
 	}
 
-	// pr_warn("%u CTX on\n", cpu);
-
-
-	// /* TODO - This copy is implementation-dependant */
-	// memcpy(&pmcs, per_cpu_ptr(&pcpu_pmcs_snapshot, cpu), sizeof(pmcs));
-	
-	// /* Read PMCs' value */
-	// read_all_pmcs(per_cpu_ptr(&pcpu_pmcs_snapshot, cpu));
-
-	// for_each_pmc(k, max_pmc_fixed + max_pmc_general) {
-	// 	if (k == fixed_pmc_pmi)
-	// 		continue;
-		
-	// 	pmcs.pmcs[k] = PMC_TRIM(per_cpu(pcpu_pmcs_snapshot.pmcs[k], cpu)
-	// 		       - pmcs.pmcs[k]);
+	// if (cpu == 1) {
+	// 	pr_warn("READ_FIXED_PMC(2): %llx\n", READ_FIXED_PMC(2));
 	// }
 
-	// msr = READ_FIXED_PMC(0);
-	// pr_info("%u] CTX: %llx\n", cpu, msr);
-
-	// mta_slots = (MTA_PIPELINE_WIDTH * pmcs.fixed[1]) + 1;
-
-	// mta_frontend = (pmcs.general[3] * SFACTOR) / mta_slots;
-
-	// mta_retiring = (pmcs.general[0] * SFACTOR) / mta_slots;
-
-	// mta_bad_spec = ((pmcs.general[1] - pmcs.general[0] +
-	// 	       (MTA_PIPELINE_WIDTH * pmcs.general[2])) * SFACTOR) /
-	// 	       mta_slots;
-
-	// mta_backend = (1 * SFACTOR) - mta_frontend - mta_bad_spec -
-	// 	      mta_retiring;
-
-	// if (current->comm[0] == 's' && 
-	//     current->comm[1] == 't' && 
-	//     current->comm[2] == 'r') {
-	// 	pr_info("*** [%u] MTA analysis: \n", current->pid);
-	// 	pr_info("* FRONTEND      %llu\n", mta_frontend);
-	// 	pr_info("* BACKEND       %llu\n", mta_backend);
-	// 	pr_info("* RETIRING      %llu\n", mta_retiring);
-	// 	pr_info("* SPECULATION   %llu\n", mta_bad_spec);
-	// }
-
-	// TODO may be placed outside
-	// TODO Restore
-	// pmc_evaluate_tma(cpu, &pmcs);
-
-	// mta_upc = (pmcs.general[3] * SFACTOR) / (pmcs.fixed[1] + 1);
-
-
-
-
-	// if (current->comm[0] == 's' && 
-	//     current->comm[1] == 't' && 
-	//     current->comm[2] == 'r') {
-		// pr_info("*** [%u] MTA analysis: \n", current->pid);
-		// pr_info("* FIXED 0    %llu\n", pmcs.fixed[0]);
-		// pr_info("* FIXED 1    %llu\n", pmcs.fixed[1]);
-		// pr_info("* FIXED 2    %llu\n", pmcs.fixed[2]);
-		// pr_info("* PMC 0      %llu\n", pmcs.general[0]);
-		// pr_info("* PMC 1      %llu\n", pmcs.general[1]);
-		// pr_info("* PMC 2      %llu\n", pmcs.general[2]);
-		// pr_info("* PMC 3      %llu\n", pmcs.general[3]);
-		// pr_info("* 0+1        %llu\n", SFACTOR * (pmcs.general[0] + pmcs.general[1]) );
-		// pr_info("* 2**        %llu\n", SFACTOR * pmcs.general[2]);
-		// pr_info("* PP*        %llu\n", (pmcs.general[2] * mta_upc));
-
-	// 	log_sample(per_cpu(pcpu_pmc_logger, cpu), &pmcs);
-	// }
-
-		// /* The system is alive, let inform the PMI handler */
-	// this_cpu_write(pcpu_pmi_counter, 0);
-	
-	// if (fixed_pmc_pmi >= 0)
-	// 	pmc_evaluate_activity(prev, prev_on, true);
-
-end:
 	put_cpu();
+}
+
+static void manage_pmu_state(void *dummy)
+{
+	ctx_hook(NULL, NULL, query_tracker(current->pid));
+}
+
+void recode_set_state(unsigned state)
+{
+	enum recode_state old_state = recode_state;
+	recode_state = state;
+
+	if (old_state == recode_state)
+		return;
+
+	if (state == OFF) {
+		pr_info("Recode state: OFF\n");
+		disable_pmc_on_system();
+		flush_written_samples_on_system();
+		return;
+	} if (state == PROFILE) {
+		/* Reset DATA and set PROFILE mode */
+		pr_info("Recode ready for PROFILE\n");
+		recode_reset_data();
+	} else if (state == SYSTEM) {
+		/* Reset DATA and set SYSTEM mode */
+		pr_info("Recode ready for SYSTEM\n");
+		recode_reset_data();
+	} else {
+		pr_warn("Recode invalid state\n");
+		recode_state = old_state;
+		return;
+	}
+
+	/* Use the cached value */
+	setup_pmc_on_system(NULL);
+	// TODO - Make this call clear
+	on_each_cpu(manage_pmu_state, NULL, 0);
+}
+
+
+void pmi_function(unsigned cpu)
+{
+	bool log = 0;
+	u64 msr1, msr2;
+
+	// pr_warn("[%u] PMI\n", cpu);
+	/* TODO Fix - query_tracker causes system hang */
+
+	if (atomic_read(&on_samples_flushing))
+		return;
+
+	atomic_inc(&active_pmis);
+
+	msr1 = READ_GENERAL_PMC(0);
+	
+	log = recode_state == SYSTEM;
+	if (!log)
+		log = (recode_state != TUNING) && query_tracker(current->pid);
+
+	pmc_evaluate_activity(current, log, false);
+
+	msr2 = READ_GENERAL_PMC(0);
+
+	if (msr1 != msr2) {
+		pr_debug("** PMCs do not seem Frozen! %llu vs %llu\n", msr1, 
+			 msr2);
+	}
+
+	atomic_dec(&active_pmis);
 }
 
 void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
@@ -312,22 +247,6 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 	unsigned cpu = get_cpu();
 	pmc_ctr old_fixed_pmi, new_fixed_pmi;
 	struct pmcs_snapshot old_pmcs;
-	// REMOVE
-	// struct pmcs_snapshot pmcs;
-
-	// if (log) {
-	// 	/* TODO - This copy is implementation-dependant */
-	// 	memcpy(&pmcs, per_cpu_ptr(&pcpu_pmcs_snapshot, cpu), sizeof(pmcs));
-		
-	// 	/* Read PMCs' value */
-	// 	read_all_pmcs(per_cpu_ptr(&pcpu_pmcs_snapshot, cpu));
-		
-	// 	write_log_sample(per_cpu(pcpu_pmc_logger, cpu), &pmcs);
-	// }
-
-	// put_cpu();
-
-	// return;
 
 	if (pmc_off)
 		disable_pmc_on_cpu();
@@ -355,6 +274,8 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 	old_fixed_pmi = old_pmcs.fixed[fixed_pmc_pmi];
 	new_fixed_pmi = per_cpu(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi], cpu);
 
+	// TODO - Fix fixed_pmc_pmi = 0
+
 	for_each_pmc(k, max_pmc_fixed + max_pmc_general)
 	{
 		old_pmcs.pmcs[k] =
@@ -365,22 +286,23 @@ void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
 	/* TSC is not computed and it is set to "this" moment */
 	old_pmcs.tsc = per_cpu(pcpu_pmcs_snapshot.tsc, cpu);
 
-	if (old_fixed_pmi >= new_fixed_pmi) {
-		old_pmcs.fixed[fixed_pmc_pmi] = 
-			PMC_TRIM(((BIT_ULL(48) - 1) - old_fixed_pmi) +
-			         new_fixed_pmi);
-		this_cpu_add(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi],
-			     reset_period + new_fixed_pmi);
-	} else {
-		old_pmcs.fixed[fixed_pmc_pmi] = new_fixed_pmi - old_fixed_pmi;
-	}
+	// TODO - Restore in CTX Switch
+	// if (old_fixed_pmi >= new_fixed_pmi) {
+	// 	old_pmcs.fixed[fixed_pmc_pmi] = 
+	// 		PMC_TRIM(((BIT_ULL(48) - 1) - old_fixed_pmi) +
+	// 		         new_fixed_pmi);
+	// 	this_cpu_add(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi],
+	// 		     reset_period + new_fixed_pmi);
+	// } else {
+	// 	old_pmcs.fixed[fixed_pmc_pmi] = new_fixed_pmi - old_fixed_pmi;
+	// }
 	
 	if (log)
 		write_log_sample(per_cpu(pcpu_pmc_logger, cpu), &old_pmcs);
 
-
 	if (pmc_off)
 		enable_pmc_on_cpu();
+		
 	put_cpu();
 }
 

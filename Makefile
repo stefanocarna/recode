@@ -12,7 +12,7 @@ EXTRA_CFLAGS +=	-std=gnu99					\
 		-Wno-declaration-after-statement		\
 		$(INCLUDES)
 
-.PHONY: modules modules_install clean debug insert remove reboot
+.PHONY: modules modules_install clean insert debug remove reboot
 
 
 modules:
@@ -33,6 +33,10 @@ insert:
 #	sudo insmod dependencies/idt_patcher/idt_patcher.ko
 	sudo insmod dependencies/shook/shook.ko
 	sudo insmod driver/recode.ko
+
+debug:
+	sudo insmod dependencies/shook/shook.ko dyndbg==pmf
+	sudo insmod driver/recode.ko dyndbg==pmf
 
 remove:
 	sudo rmmod recode

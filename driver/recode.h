@@ -15,12 +15,14 @@
 #undef pr_fmt
 #define pr_fmt(fmt) MODNAME ": " fmt
 
-
-#define RING_BUFF_LENGTH 64
+#define RING_BUFF_LENGTH 12
 #define RING_SIZE (sizeof(struct pmcs_snapshot_ring))
 
 #define RING_COUNT 128
 #define BUFF_MEMORY RING_COUNT * RING_SIZE
+
+extern atomic_t active_pmis;
+extern atomic_t on_samples_flushing;
 
 enum recode_state {
 	OFF = 0,
@@ -115,11 +117,18 @@ extern int write_log_sample(struct pmc_logger *logger,
                             struct pmcs_snapshot *sample);
 
 extern struct pmcs_snapshot *read_log_sample(struct pmc_logger *logger);
-                            ;
+
+extern bool check_log_sample(struct pmc_logger *logger);
+
 extern int flush_logs(struct pmc_logger *logger);
 
 extern bool push_ps_ring(struct pmcs_snapshot_chain *chain,
                              struct pmcs_snapshot_ring *ring);
+
+extern bool push_ps_ring_reset(struct pmcs_snapshot_chain *chain,
+                             struct pmcs_snapshot_ring *ring);
+
+extern void flush_written_samples_on_system(void);
 
 extern struct pmcs_snapshot_ring *pop_ps_ring(struct pmcs_snapshot_chain *chain);
 
@@ -135,7 +144,6 @@ extern void pmc_evaluate_activity(struct task_struct *tsk, bool log,
 				  bool pmc_off);
 
 /* Recode Config */
-extern u64 reset_period;
 
 /* Recode PMI */
 extern void pmi_function(unsigned cpu);

@@ -1,10 +1,12 @@
 #ifndef _RECODE_CONFIG_H
 #define _RECODE_CONFIG_H
 
-#include "recode_pmu.h"
+#include "pmu/pmu.h"
+
+extern u64 __read_mostly reset_period;
+extern unsigned __read_mostly fixed_pmc_pmi;
 
 /* TODO Refactor */
-
 extern unsigned params_cpl_os;
 extern unsigned params_cpl_usr;
 

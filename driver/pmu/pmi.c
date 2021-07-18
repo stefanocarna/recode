@@ -4,8 +4,8 @@
 #include <asm/nmi.h>
 
 #include "recode.h"
-#include "recode_pmi.h"
-#include "recode_pmu.h"
+#include "pmu/pmi.h"
+#include "pmu/pmu.h"
 #include "recode_config.h"
 
 static DEFINE_PER_CPU(u32, pcpu_lvt_bkp);
@@ -24,8 +24,6 @@ static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 	u64 global;
 	unsigned handled = 0;
 	unsigned cpu = get_cpu();
-
-	atomic_inc(&active_pmis);	
 
 	/* Read the PMCs state */
 	rdmsrl(MSR_CORE_PERF_GLOBAL_STATUS, global);
@@ -61,19 +59,15 @@ static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 	WRITE_FIXED_PMC(fixed_pmc_pmi, reset_period);
 
 no_pmi:
-	wrmsrl(MSR_CORE_PERF_GLOBAL_OVF_CTRL, global);
-
-end:
-
 	if (recode_pmi_vector == NMI) {
 		apic_write(APIC_LVTPC, LVT_NMI);
-
 	} else {
 		apic_write(APIC_LVTPC, RECODE_PMI);
 		apic_eoi();
 	}
 
-	atomic_dec(&active_pmis);
+	wrmsrl(MSR_CORE_PERF_GLOBAL_OVF_CTRL, global);
+end:
 	put_cpu();
 
         return handled;

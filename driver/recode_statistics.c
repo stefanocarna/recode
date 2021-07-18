@@ -11,8 +11,6 @@ bool push_ps_ring(struct pmcs_snapshot_chain *chain,
         if (!ring)
                 return false;
 
-        pr_debug("%p] PUSHING CHAIN NEXT %p\n", chain, ring);
-	
         spin_lock_irqsave(&chain->lock, flags);
         /* Reset IDX */
         ring->idx = 0;
@@ -29,6 +27,16 @@ bool push_ps_ring(struct pmcs_snapshot_chain *chain,
         return true;
 }
 
+bool push_ps_ring_reset(struct pmcs_snapshot_chain *chain,
+                             struct pmcs_snapshot_ring *ring)
+{
+        if (!ring)
+                return false;
+        
+        ring->length = RING_BUFF_LENGTH;
+        return push_ps_ring(chain, ring);
+}
+
 struct pmcs_snapshot_ring *pop_ps_ring(struct pmcs_snapshot_chain *chain)
 {
 	unsigned long flags;
@@ -38,22 +46,9 @@ struct pmcs_snapshot_ring *pop_ps_ring(struct pmcs_snapshot_chain *chain)
                 elem = chain->head;
                 chain->head = chain->head->next;
         }
-        pr_debug("%p] POPPING CHAIN NEXT %p\n", chain, elem ? elem->next : NULL);
+        // pr_debug("%p] POPPING CHAIN NEXT %p\n", chain, elem ? elem->next : NULL);
 	spin_unlock_irqrestore(&chain->lock, flags);
         return elem;
-}
-
-void fake_log_write(struct pmc_logger *logger)
-{
-        unsigned k;
-        struct pmcs_snapshot *ps = vzalloc(sizeof(struct pmcs_snapshot));
-        if (!ps) {
-                pr_warn("Cannot allocate pmcs_snapshot\n");
-                return;
-        }
-
-        for (k = 0; k < 120; ++k)
-                write_log_sample(logger, ps);
 }
 
 struct pmc_logger *init_logger(unsigned cpu)
@@ -80,9 +75,7 @@ struct pmc_logger *init_logger(unsigned cpu)
         /* Shortcut to free rings */
         logger->ptr = logger->chain.head;
 
-	if (cpu == 0) {
-                pr_debug("Created and linked %u rings\n", RING_COUNT);
-	}
+        pr_debug("[%u] Created and linked %u rings\n", cpu, RING_COUNT);
 
         /* Link all rings */
         for (i = 0; i < RING_COUNT - 1; ++i) {
@@ -90,9 +83,10 @@ struct pmc_logger *init_logger(unsigned cpu)
 	        logger->chain.head[i].length = RING_BUFF_LENGTH;
                 logger->chain.head[i].next = &logger->chain.head[i+1];
 
-                if (cpu == 0) {
-        		pr_debug("LINKING %u: %p [%u, %u]\n", i ,&logger->chain.head[i], logger->chain.head[i].idx, logger->chain.head[i].length);
-                }
+		pr_debug("[%u] LINKING %u: %p [%u, %u]\n", i , cpu,
+				&logger->chain.head[i],
+				logger->chain.head[i].idx,
+				logger->chain.head[i].length);
 
                 if (i == RING_COUNT - 2) {
                         logger->chain.tail = &logger->chain.head[i+1];
@@ -102,9 +96,7 @@ struct pmc_logger *init_logger(unsigned cpu)
                 }
         }
 
-        if (cpu == 0) {
-                pr_debug("Created and linked %u rings\n", RING_COUNT);
-        }
+	pr_debug("[%u] Created and linked %u rings\n", cpu, RING_COUNT);
 
         /* Setup the readable rings */
         // logger->rd.head = NULL;
@@ -115,36 +107,39 @@ struct pmc_logger *init_logger(unsigned cpu)
         /* Unlink the element */
 	logger->cpu = cpu;
 
-        // if (cpu == 0)
-        //         fake_log_write(logger);
-
         return logger;
 }
 
 void reset_logger(struct pmc_logger *logger)
 {
+        struct pmcs_snapshot_ring *psr;
+
         if (!logger)
                 return;
-                
+
+	/* Cleanup Writer's rings - Currently it should be at most 1 */
+	psr = pop_ps_ring(&logger->wr);
+	while (psr) {
+        	push_ps_ring_reset(&logger->chain, psr);
+		psr = pop_ps_ring(&logger->wr);
+	}
+
+	/* Cleanup Reader's rings */
+	psr = pop_ps_ring(&logger->rd);
+	while (psr) {
+        	push_ps_ring_reset(&logger->chain, psr);
+		psr = pop_ps_ring(&logger->rd);
+	}
+
+	/* Init  Writer's ring */
+	push_ps_ring(&logger->wr, pop_ps_ring(&logger->chain));
+
         logger->count = 0;
 }
-
-// static void free_pmcs_snapshot_ring(struct pmcs_snapshot_ring *ring)
-// {
-//         struct pmcs_snapshot_ring *tmp;
-//         while(ring) {
-//                 tmp = ring;
-//                 ring = ring->next;
-//                 vfree(tmp);
-//         }
-// }
 
 void fini_logger(struct pmc_logger *logger)
 {
         /* Enable if individually allocated */
-        // free_pmcs_snapshot_ring(logger->chain);
-        // free_pmcs_snapshot_ring(logger->wr_buff);
-        // free_pmcs_snapshot_ring(logger->rd_buff);
         vfree(logger->ptr);
         vfree(logger);
 }
@@ -157,10 +152,6 @@ int write_log_sample(struct pmc_logger *logger, struct pmcs_snapshot *sample)
                 return -1;
         }
 
-        // TODO Remove
-        if (logger->cpu != 0)
-                return 0;
-                
         psr = logger->wr.head;
         
         if (WARN_ONCE(!psr, "Internal error, wr_buff is NULL\n")) {
@@ -182,15 +173,16 @@ int write_log_sample(struct pmc_logger *logger, struct pmcs_snapshot *sample)
                 }
         }
 
-        if (logger->count % 8 == 0) {
-                pr_debug("Wrote %u samples on core %u\n",
-                        logger->count, logger->cpu);
-        }
-
         memcpy(&psr->buff[psr->idx], sample, sizeof(struct pmcs_snapshot));
 
         psr->idx++;
         logger->count++;
+        
+        if (logger->count % 128 == 0) {
+                pr_info("Wrote %u samples on core %u\n",
+                        logger->count, logger->cpu);
+        }
+
         return 0;
 }
 
@@ -210,7 +202,7 @@ struct pmcs_snapshot *read_log_sample(struct pmc_logger *logger)
         }
 
         if(psr->idx >= psr->length) {
-                push_ps_ring(&logger->chain, pop_ps_ring(&logger->rd));
+                push_ps_ring_reset(&logger->chain, pop_ps_ring(&logger->rd));
 
                 // TODO Optimize
                 if (WARN_ONCE(!logger->rd.head, "Cannot log on cpu %u, rd_buff is EMPTY\n", logger->cpu)) {
@@ -225,4 +217,63 @@ struct pmcs_snapshot *read_log_sample(struct pmc_logger *logger)
 
         psr->idx++;
         return sample;
+}
+
+static void flush_written_samples_on_cpu(void *dummy)
+{
+        unsigned cpu = get_cpu();
+        struct pmcs_snapshot_ring *psr;
+        struct pmc_logger *logger = per_cpu(pcpu_pmc_logger, cpu);
+
+        pr_debug("Flushing written samples on cpu %u\n", cpu);
+
+        psr = pop_ps_ring(&logger->wr);
+
+	if (!psr)
+		goto end;
+
+        if (psr->idx < psr->length) {
+                psr->length = psr->idx;
+                pr_debug("Cutting ring at %u on cpu %u\n", psr->idx + 1, cpu);
+        }
+
+        push_ps_ring(&logger->rd, psr);
+
+        push_ps_ring(&logger->wr, pop_ps_ring(&logger->chain));
+
+end:
+        put_cpu();
+}
+
+void flush_written_samples_on_system(void)
+{
+        atomic_inc(&on_samples_flushing);
+        
+        while(atomic_read(&active_pmis))
+                ;
+
+        on_each_cpu(flush_written_samples_on_cpu, NULL, 1);
+        
+        atomic_dec(&on_samples_flushing);
+}
+
+bool check_log_sample(struct pmc_logger *logger)
+{
+        struct pmcs_snapshot_ring *psr;
+        
+        if (WARN_ONCE(!logger, "CHECK Internal error, logger is NULL\n")) {
+                return NULL;
+        }
+
+        psr = logger->rd.head;
+
+        if (!psr)
+                return false;
+
+        if (psr->idx >= psr->length) {
+                psr = psr->next;
+                return psr && psr->idx < psr->length;
+        }
+
+        return true;
 }
