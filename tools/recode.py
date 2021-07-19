@@ -6,6 +6,7 @@ import argparse
 import utils.plug_module as plug_module
 import utils.plug_config as plug_config
 import utils.plug_profiler as plug_profiler
+import utils.plug_data as plug_data
 
 
 def parser_init():
@@ -17,6 +18,7 @@ def parser_init():
     plug_module.setParserArguments(subparser)
     plug_config.setParserArguments(subparser)
     plug_profiler.setParserArguments(subparser)
+    plug_data.setParserArguments(subparser)
 
     return parser
 
@@ -34,6 +36,7 @@ if __name__ == "__main__":
     plug_module.compute(args)
     plug_config.compute(args)
     plug_profiler.compute(args)
+    plug_data.compute(args)
 
     # if args.plot:
     #     tool_plot()
