@@ -10,6 +10,12 @@ extern unsigned __read_mostly fixed_pmc_pmi;
 extern unsigned params_cpl_os;
 extern unsigned params_cpl_usr;
 
+#define RING_BUFF_LENGTH 12
+#define RING_SIZE (sizeof(struct data_logger_ring))
+
+#define RING_COUNT 128
+#define BUFF_MEMORY RING_COUNT * RING_SIZE
+
 enum recode_pmi_vector {
 	NMI,
 #ifdef FAST_IRQ_ENABLED

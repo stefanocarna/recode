@@ -9,7 +9,7 @@ static int sampling_events_show(struct seq_file *m, void *v)
 {
 	unsigned i;
 
-	for (i = 0; i < max_pmc_general; i++) {
+	for (i = 0; i < nr_pmc_general; i++) {
 		seq_printf(m, "%llx\t", pmc_events[i] & 0xffff);
 	}
 	seq_printf(m, "\n");
@@ -33,11 +33,11 @@ static ssize_t events_write(struct file *filp, const char __user *buffer_user,
 			     sizeof(char) * count);
 	if (err)
 		return err;
-	while (((p = strsep(&buffer, ",")) != NULL) && i < max_pmc_general) {
+	while (((p = strsep(&buffer, ",")) != NULL) && i < nr_pmc_general) {
 		sscanf(p, "%llx", &pmc_events[i]);
 		i++;
 	}
-	while (i < max_pmc_general) {
+	while (i < nr_pmc_general) {
 		pmc_events[i] = 0ULL;
 		i++;
 	}

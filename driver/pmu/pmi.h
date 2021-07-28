@@ -10,6 +10,8 @@
 
 #define RECODE_PMI 239
 
+#define PMI_DELAY 0x100
+
 // extern atomic_t active_pmis;
 
 int pmi_nmi_setup(void);
@@ -17,5 +19,7 @@ void pmi_nmi_cleanup(void);
 
 int pmi_irq_setup(void);
 void pmi_irq_cleanup(void);
+
+extern atomic_t active_pmis;
 
 #endif /* _RECODE_PMI_H */

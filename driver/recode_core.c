@@ -19,29 +19,29 @@
 #include "pmu/pmi.h"
 #include "pmu/pmu.h"
 #include "recode_config.h"
+#include "recode_collector.h"
 
 DEFINE_PER_CPU(struct pmcs_snapshot, pcpu_pmcs_snapshot) = { 0 };
 DEFINE_PER_CPU(bool, pcpu_last_ctx_snapshot) = false;
 
 enum recode_state __read_mostly recode_state = OFF;
 
-atomic_t on_samples_flushing = ATOMIC_INIT(0);
-
 DEFINE_PER_CPU(struct pmcs_snapshot, pcpu_pmc_snapshot_ctx);
-DEFINE_PER_CPU(struct pmc_logger *, pcpu_pmc_logger);
+DEFINE_PER_CPU(struct data_logger *, pcpu_data_logger);
 
+void pmc_generate_snapshot(struct pmcs_snapshot *old_pmcs, bool pmc_off);
 
 int recode_data_init(void)
 {
 	unsigned cpu;
 
 	for_each_online_cpu (cpu) {
-		per_cpu(pcpu_pmc_logger, cpu) = init_logger(cpu);
-		if (!per_cpu(pcpu_pmc_logger, cpu))
+		per_cpu(pcpu_data_logger, cpu) = init_logger(cpu);
+		if (!per_cpu(pcpu_data_logger, cpu))
 			goto mem_err;
 		per_cpu(pcpu_pmcs_active, cpu) = false;
 		
-		if (fixed_pmc_pmi >= 0 && fixed_pmc_pmi < max_pmc_fixed)
+		if (fixed_pmc_pmi <= nr_pmc_fixed)
 			per_cpu(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi], cpu) =
 				PMC_TRIM(reset_period);
 	}
@@ -57,7 +57,7 @@ void recode_data_fini(void)
 	unsigned cpu;
 
 	for_each_online_cpu (cpu) {
-		fini_logger(per_cpu(pcpu_pmc_logger, cpu));
+		fini_logger(per_cpu(pcpu_data_logger, cpu));
 	}
 }
 
@@ -124,16 +124,16 @@ static void recode_reset_data(void)
 	unsigned pmc;
 
 	for_each_online_cpu (cpu) {
-		reset_logger(per_cpu(pcpu_pmc_logger, cpu));
+		reset_logger(per_cpu(pcpu_data_logger, cpu));
 
-		for (pmc = 0; pmc < max_pmc_fixed; ++pmc)
+		for (pmc = 0; pmc <= nr_pmc_fixed; ++pmc)
 			per_cpu(pcpu_pmcs_snapshot.fixed[pmc], cpu) = 0;
 
-		if (fixed_pmc_pmi >= 0 && fixed_pmc_pmi < max_pmc_fixed)
+		if (fixed_pmc_pmi <= nr_pmc_fixed)
 			per_cpu(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi], cpu) =
 				PMC_TRIM(reset_period);
 
-		for (pmc = 0; pmc < max_pmc_general; ++pmc)
+		for (pmc = 0; pmc < nr_pmc_general; ++pmc)
 			per_cpu(pcpu_pmcs_snapshot.general[pmc], cpu) = 0;
 	}
 }
@@ -141,12 +141,16 @@ static void recode_reset_data(void)
 static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 {
 	unsigned cpu = get_cpu();
+	struct data_logger_sample sample;
 
 	switch (recode_state) {
 	case OFF:
 		if (this_cpu_read(pcpu_pmcs_active))
 			disable_pmc_on_cpu();
-		break;
+		goto end;
+	case IDLE:
+		prev_on = false;
+		fallthrough;
 	case SYSTEM:
 		if (!this_cpu_read(pcpu_pmcs_active))
 			enable_pmc_on_cpu();
@@ -154,26 +158,144 @@ static void ctx_hook(struct task_struct *prev, bool prev_on, bool curr_on)
 	case TUNING:
 	case PROFILE:
 		/* Toggle PMI */
-		if (this_cpu_read(pcpu_pmcs_active) && !curr_on)
+		if (this_cpu_read(pcpu_pmcs_active) && !curr_on) 
 			disable_pmc_on_cpu();
-		else if (!this_cpu_read(pcpu_pmcs_active) && curr_on)
+		else if (!this_cpu_read(pcpu_pmcs_active) && curr_on) {
+			pr_info("%u] Enabling PMCs for pid %u\n", cpu, current->pid);
 			enable_pmc_on_cpu();
+		}
 		break;
 	default:
 		pr_warn("Invalid state on cpu %u... disabling PMCs\n", cpu);
 		disable_pmc_on_cpu();
+		goto end;
 	}
 
-	// if (cpu == 1) {
-	// 	pr_warn("READ_FIXED_PMC(2): %llx\n", READ_FIXED_PMC(2));
-	// }
+	if (!prev_on) {
+		pmc_generate_snapshot(NULL, false);
+	} else {
+		pmc_generate_snapshot(&sample.pmcs, true);
+		// TODO - Note here pmcs are active, so we are recording
+		//        part of the sample collection work
+		sample.id = prev->pid;
+		sample.tracked = true;
+		sample.k_thread = !prev->mm;
+		write_log_sample(per_cpu(pcpu_data_logger, cpu), &sample);
+	}
 
+end:
+	put_cpu();
+}
+
+void pmi_function(unsigned cpu)
+{
+	struct data_logger_sample sample; 
+
+	if (recode_state == OFF) {
+		pr_warn("Recode is OFF - This PMI shouldn't fire, ignoring\n");
+		return;
+	}
+
+	// TODO - it may require the active_pmis signals
+	if (recode_state == IDLE) {
+		pmc_generate_snapshot(&sample.pmcs, false);
+		return;
+	}
+
+	if (atomic_read(&on_samples_flushing)) {
+		pr_debug("Skipping pmi_function because on_samples_flushing\n");
+		return;
+	}
+
+	atomic_inc(&active_pmis);
+
+	pmc_generate_snapshot(&sample.pmcs, false);
+
+	sample.id = current->pid;
+	sample.tracked = true;
+	sample.k_thread = !current->mm;
+	write_log_sample(per_cpu(pcpu_data_logger, cpu), &sample);
+
+	atomic_dec(&active_pmis);
+}
+
+void pmc_generate_snapshot(struct pmcs_snapshot *sample_pmcs, bool pmc_off)
+{
+	unsigned k;
+	pmc_ctr old_pmc_pmi, new_pmc_pmi;
+	unsigned cpu = get_cpu();
+	bool overflow = !pmc_off;
+	/* At this moment @new_pmcs refers to the last snapshot */
+	struct pmcs_snapshot *new_pmcs = per_cpu_ptr(&pcpu_pmcs_snapshot, cpu);
+
+	if (pmc_off)
+		disable_pmc_on_cpu();
+
+	if (sample_pmcs)
+		/* At this moment @sample_pmcs refers to the last snapshot */
+		memcpy(sample_pmcs, new_pmcs, sizeof(struct pmcs_snapshot));
+
+	/* Read current PMCs' value and place into @new_pmcs */
+	read_all_pmcs(new_pmcs);
+
+	if (sample_pmcs) {
+		old_pmc_pmi = sample_pmcs->fixed[fixed_pmc_pmi];
+		new_pmc_pmi = new_pmcs->fixed[fixed_pmc_pmi];
+
+		/* Compute the sample values and place into @sample_pmcs */
+		for_each_pmc(k, nr_pmc_fixed + nr_pmc_general)
+		{
+			sample_pmcs->pmcs[k] = PMC_TRIM(new_pmcs->pmcs[k] -
+					sample_pmcs->pmcs[k]);
+		}
+
+		/* TSC is not computed and it is set to "this" moment */
+		sample_pmcs->tsc = new_pmcs->tsc;
+
+		/**
+		 * So far we have that
+		 * @new_pmcs 	: holds the last pmcs_snapshot (raw values)
+		 * @sample_pmcs : holds the last pmcs_sample (computed values)
+		 * @old_pmc_pmi : holds the old raw value for the pmc_pmi
+		 * @new_pmc_pmi : holds the new raw value for the pmc_pmi
+		 */
+
+		if (overflow) { // sample_pmcs->fixed[fixed_pmc_pmi] == 0
+			// new_pmc_pmi == 0x2c
+			/* We got no CTX switches in the meanwhile */
+			if (old_pmc_pmi < PMI_DELAY) {
+				sample_pmcs->fixed[fixed_pmc_pmi] = 
+				    PMC_TRIM(PMC_CTR_MAX - reset_period);
+			} else {
+				sample_pmcs->fixed[fixed_pmc_pmi] =
+				    PMC_TRIM(PMC_CTR_MAX - old_pmc_pmi);
+			}
+		} else {
+			if (old_pmc_pmi < PMI_DELAY)
+				sample_pmcs->fixed[fixed_pmc_pmi] =
+				    PMC_TRIM(new_pmc_pmi - reset_period);
+			else 
+				sample_pmcs->fixed[fixed_pmc_pmi] =
+				    PMC_TRIM(new_pmc_pmi - old_pmc_pmi);
+		}
+
+		// TODO - Delete or improve
+		if (cpu == 0) {
+			pr_debug("[CTX %u] OLD: %llx, NEW: %llx, DIFF %llx\n",
+				 pmc_off, old_pmc_pmi, new_pmc_pmi,
+				 sample_pmcs->fixed[fixed_pmc_pmi]);
+		}
+	}
+
+	if (pmc_off)
+		enable_pmc_on_cpu();
+	
 	put_cpu();
 }
 
 static void manage_pmu_state(void *dummy)
 {
-	ctx_hook(NULL, NULL, query_tracker(current->pid));
+	ctx_hook(NULL, false, query_tracker(current->pid));
 }
 
 void recode_set_state(unsigned state)
@@ -207,103 +329,6 @@ void recode_set_state(unsigned state)
 	setup_pmc_on_system(NULL);
 	// TODO - Make this call clear
 	on_each_cpu(manage_pmu_state, NULL, 0);
-}
-
-
-void pmi_function(unsigned cpu)
-{
-	bool log = 0;
-	u64 msr1, msr2;
-
-	// pr_warn("[%u] PMI\n", cpu);
-	/* TODO Fix - query_tracker causes system hang */
-
-	if (atomic_read(&on_samples_flushing))
-		return;
-
-	atomic_inc(&active_pmis);
-
-	msr1 = READ_GENERAL_PMC(0);
-	
-	log = recode_state == SYSTEM;
-	if (!log)
-		log = (recode_state != TUNING) && query_tracker(current->pid);
-
-	pmc_evaluate_activity(current, log, false);
-
-	msr2 = READ_GENERAL_PMC(0);
-
-	if (msr1 != msr2) {
-		pr_debug("** PMCs do not seem Frozen! %llu vs %llu\n", msr1, 
-			 msr2);
-	}
-
-	atomic_dec(&active_pmis);
-}
-
-void pmc_evaluate_activity(struct task_struct *tsk, bool log, bool pmc_off)
-{
-	unsigned k;
-	unsigned cpu = get_cpu();
-	pmc_ctr old_fixed_pmi, new_fixed_pmi;
-	struct pmcs_snapshot old_pmcs;
-
-	if (pmc_off)
-		disable_pmc_on_cpu();
-
-	/* TODO - This copy is implementation-dependant */
-	memcpy(&old_pmcs, per_cpu_ptr(&pcpu_pmcs_snapshot, cpu),
-	       sizeof(struct pmcs_snapshot));
-
-	/* Read PMCs' value */
-	read_all_pmcs(per_cpu_ptr(&pcpu_pmcs_snapshot, cpu));
-
-	/* 
-	 * What if a PMI occurs and the IRQs are OFF?
-	 * 
-	 * This function is executed at the end of teh context switch and in the
-	 * PMI routine. The context switch may occur while the PMC overflows and
-	 * a wrong value would be read. We need to adjust such a value with the
-	 * reset_period.
-	 * 
-	 * 1. Do we need to check if there is a pending PMI?
-	 * 2. Can we just look for and older value bigger than the new one? 
-	 */
-
-	/* Implementing Solution 2. */
-	old_fixed_pmi = old_pmcs.fixed[fixed_pmc_pmi];
-	new_fixed_pmi = per_cpu(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi], cpu);
-
-	// TODO - Fix fixed_pmc_pmi = 0
-
-	for_each_pmc(k, max_pmc_fixed + max_pmc_general)
-	{
-		old_pmcs.pmcs[k] =
-			PMC_TRIM(per_cpu(pcpu_pmcs_snapshot.pmcs[k], cpu) -
-				 old_pmcs.pmcs[k]);
-	}
-
-	/* TSC is not computed and it is set to "this" moment */
-	old_pmcs.tsc = per_cpu(pcpu_pmcs_snapshot.tsc, cpu);
-
-	// TODO - Restore in CTX Switch
-	// if (old_fixed_pmi >= new_fixed_pmi) {
-	// 	old_pmcs.fixed[fixed_pmc_pmi] = 
-	// 		PMC_TRIM(((BIT_ULL(48) - 1) - old_fixed_pmi) +
-	// 		         new_fixed_pmi);
-	// 	this_cpu_add(pcpu_pmcs_snapshot.fixed[fixed_pmc_pmi],
-	// 		     reset_period + new_fixed_pmi);
-	// } else {
-	// 	old_pmcs.fixed[fixed_pmc_pmi] = new_fixed_pmi - old_fixed_pmi;
-	// }
-	
-	if (log)
-		write_log_sample(per_cpu(pcpu_pmc_logger, cpu), &old_pmcs);
-
-	if (pmc_off)
-		enable_pmc_on_cpu();
-		
-	put_cpu();
 }
 
 /* Register thread for profiling activity  */

@@ -2,7 +2,10 @@
 #include <linux/vmalloc.h>
 
 #include "proc.h"
-#include "../recode_config.h"
+#include "recode_config.h"
+#include "recode_collector.h"
+
+#define DATA_HEADER "# PID,TRACKED,KTHREAD,CTX_EVT,TIME,TSC,INST,CYCLES,TSC_CYCLES"
 
 extern unsigned int tsc_khz;
 
@@ -12,10 +15,10 @@ extern unsigned int tsc_khz;
 
 static void *cpu_logger_seq_start(struct seq_file *m, loff_t *pos)
 {
-	unsigned k;
-	struct pmc_logger *data;
+	unsigned pmc;
+	struct data_logger *data;
 
-	data = (struct pmc_logger *)PDE_DATA(file_inode(m->file));
+	data = (struct data_logger *)PDE_DATA(file_inode(m->file));
 	if (!data)
 		goto no_data;
 	
@@ -24,10 +27,10 @@ static void *cpu_logger_seq_start(struct seq_file *m, loff_t *pos)
 
 	/* Print header */
 	if (!(*pos)) {
-		seq_printf(m, "# PID,TIME,TSC,INST,CYCLES,TSC_CYCLES");
-		for (k = 0; k < max_pmc_general; ++k)
-			if (pmc_events[k]) {
-				seq_printf(m, ",%llx", pmc_events[k]);
+		seq_printf(m, DATA_HEADER);
+		for_each_general_pmc(pmc)
+			if (pmc_events[pmc]) {
+				seq_printf(m, ",%llx", pmc_events[pmc]);
 			}
 		seq_printf(m, "\n");
 	}
@@ -41,8 +44,8 @@ no_data:
 
 static void *cpu_logger_seq_next(struct seq_file *m, void *v, loff_t *pos)
 {
-	struct pmc_logger *data;
-	data = (struct pmc_logger *)PDE_DATA(file_inode(m->file));
+	struct data_logger *data;
+	data = (struct data_logger *)PDE_DATA(file_inode(m->file));
 	
 	(*pos)++;
 
@@ -57,11 +60,12 @@ err:
 static int cpu_logger_seq_show(struct seq_file *m, void *v)
 {
 	u64 time;
-	unsigned k;
-	struct pmc_logger *data;
-	struct pmcs_snapshot *sample;
+	unsigned pmc;
+	struct data_logger *data;
+	struct pmcs_snapshot *pmcs;
+	struct data_logger_sample *sample;
 	
-	data = (struct pmc_logger *)PDE_DATA(file_inode(m->file));
+	data = (struct data_logger *)PDE_DATA(file_inode(m->file));
 
 	if (!v)
 		goto err;
@@ -70,14 +74,17 @@ static int cpu_logger_seq_show(struct seq_file *m, void *v)
 
 	if (!sample)
 		goto err;
-	
-	time = sample->tsc / tsc_khz;
-	seq_printf(m, "%u,%llu,%llu,%llu,%llu,%llu", 111, time, sample->tsc,
-		sample->fixed[0], sample->fixed[1], sample->fixed[2]);
 
-	for (k = 0; k < max_pmc_general; ++k) {
-		if (pmc_events[k]) {
-			seq_printf(m, ",%llu", sample->general[k]);
+	pmcs = &sample->pmcs;
+	time = pmcs->tsc / tsc_khz;
+
+	seq_printf(m, "%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu", sample->id,
+	           sample->tracked, sample->k_thread, sample->ctx_evt, time,
+		   pmcs->tsc, pmcs->fixed[0], pmcs->fixed[1], pmcs->fixed[2]);
+
+	for_each_general_pmc(pmc) {
+		if (pmc_events[pmc]) {
+			seq_printf(m, ",%llu", pmcs->general[pmc]);
 		}
 	}
 	seq_printf(m, "\n");
@@ -126,7 +133,7 @@ int register_proc_cpus(void)
 		/* memory leak when releasing */
 		tmp_dir =
 			proc_create_data(name, 0444, dir, &cpu_logger_proc_fops,
-					 per_cpu(pcpu_pmc_logger, cpu));
+					 per_cpu(pcpu_data_logger, cpu));
 
 		// TODO Add cleanup code
 		if (!tmp_dir)

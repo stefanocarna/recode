@@ -3,11 +3,16 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 
-
 #include "recode.h"
 #include "pmu/pmu.h"
 #include "pmu/pmi.h"
 #include "recode_config.h"
+
+// struct pmc_multiplexer {
+// 	unsigned cnt;
+// 	unsigned max;
+// 	pmc_evt_sel *cfgs;
+// };
 
 u64 perf_global_ctrl = 0xFULL | BIT_ULL(32) | BIT_ULL(33) | BIT_ULL(34);
 u64 fixed_ctrl = 0;
@@ -15,8 +20,8 @@ u64 fixed_ctrl = 0;
 // u64 fixed_ctrl = 0x3A3; // Enable USR only
 // u64 fixed_ctrl = 0x393; // Enable OS only
 
-unsigned __read_mostly max_pmc_fixed = 3;
-unsigned __read_mostly max_pmc_general = 4;
+unsigned __read_mostly nr_pmc_fixed = 3;
+unsigned __read_mostly nr_pmc_general = 4;
 
 DEFINE_PER_CPU(bool ,pcpu_pmcs_active) = false;
 
@@ -45,8 +50,8 @@ void get_machine_configuration(void)
 		return;
 
 	version = eax.split.version_id;
-	max_pmc_general = eax.split.num_counters;
-	perf_global_ctrl = (BIT(max_pmc_general) - 1) | 
+	nr_pmc_general = eax.split.num_counters;
+	perf_global_ctrl = (BIT(nr_pmc_general) - 1) | 
 	                    BIT(32) | BIT(33) |BIT(34);
 
 	pr_info("PMU Version: %u\n", version);
@@ -57,11 +62,22 @@ void get_machine_configuration(void)
 		min_t(unsigned, 8, eax.split.num_counters));
 }
 
+void fast_setup_general_pmc_on_cpu(void *pmc_cfgs)
+{
+	unsigned pmc;
+	struct pmc_evt_sel *cfgs = (struct pmc_evt_sel *) pmc_cfgs;
+
+	for_each_general_pmc(pmc) {
+		SETUP_GENERAL_PMC(pmc, cfgs[pmc].perf_evt_sel);
+		WRITE_GENERAL_PMC(pmc, 0ULL);
+	}
+}
+
 static void __setup_pmc_on_cpu(void *pmc_cfgs)
 {
 #ifndef CONFIG_RUNNING_ON_VM
 	u64 msr;
-	unsigned k;
+	unsigned pmc;
 	struct pmc_evt_sel *cfgs = (struct pmc_evt_sel *) pmc_cfgs;
 
 	if (!cfgs) {
@@ -82,27 +98,24 @@ static void __setup_pmc_on_cpu(void *pmc_cfgs)
 	/* Enable FREEZE_ON_PMI */
 	wrmsrl(MSR_IA32_DEBUGCTLMSR, BIT(12));
 
-	for (k = 0; k < max_pmc_general; ++k) {
-		SETUP_GENERAL_PMC(k, cfgs[k].perf_evt_sel);
-		WRITE_GENERAL_PMC(k, 0ULL);
-	}
+	fast_setup_general_pmc_on_cpu(cfgs);
 
-	for (k = 0; k < max_pmc_fixed; ++k) {
+	for_each_fixed_pmc(pmc) {
 		/**
 		 * bits: 3   2   1   0
 		 * 	PMI, 0, USR, OS
 		 */
-		if (k == fixed_pmc_pmi) {
-			WRITE_FIXED_PMC(k, reset_period);
+		if (pmc == fixed_pmc_pmi) {
+			WRITE_FIXED_PMC(pmc, reset_period);
 			/* Set PMI */
-			fixed_ctrl |= (BIT(3) << (k * 4)); 
+			fixed_ctrl |= (BIT(3) << (pmc * 4));
 			if (params_cpl_usr)
-				fixed_ctrl |= (BIT(1) << (k * 4));
-			if (params_cpl_usr)
-				fixed_ctrl |= (BIT(0) << (k * 4));
+				fixed_ctrl |= (BIT(1) << (pmc * 4));
+			if (params_cpl_os)
+				fixed_ctrl |= (BIT(0) << (pmc * 4));
 		} else {
-			WRITE_FIXED_PMC(k, 0ULL);
-			fixed_ctrl |= ((BIT(0) | BIT(1)) << (k * 4)); /* 0011 -> USR, OS */
+			WRITE_FIXED_PMC(pmc, 0ULL);
+			fixed_ctrl |= ((BIT(0) | BIT(1)) << (pmc * 4)); /* 0011 -> USR, OS */
 		}
 	}
 
@@ -126,15 +139,13 @@ void read_all_pmcs(struct pmcs_snapshot *snapshot)
 	snapshot->tsc = (u64)rdtsc_ordered();
 
 	/* Read all active fixed pmcs */
-	for_each_fixed_pmc(pmc)
-	{
+	for_each_fixed_pmc(pmc) {
 		if (perf_global_ctrl & BIT_ULL(pmc)) {
 			snapshot->fixed[pmc] = READ_FIXED_PMC(pmc);
 		}
 	}
 	/* Read all active general pmcs */
-	for_each_general_pmc(pmc)
-	{
+	for_each_general_pmc(pmc) {
 		if (perf_global_ctrl & BIT_ULL(pmc)) {
 			snapshot->general[pmc] = READ_GENERAL_PMC(pmc);
 		}
@@ -212,10 +223,11 @@ void debug_pmu_state(void)
 
 int setup_pmc_on_system(pmc_evt_code *codes)
 {
-	unsigned k;
+	unsigned pmc;
 
 	if (!pmc_cfgs) {
-		pmc_cfgs = kzalloc(sizeof(struct pmc_evt_sel) * max_pmc_general, GFP_KERNEL);
+		pmc_cfgs = kzalloc(sizeof(struct pmc_evt_sel) * nr_pmc_general,
+				   GFP_KERNEL);
 		if (!pmc_cfgs) {
 			pr_err("Cannot allocate memory for PMC configs\n");
 			return -ENOMEM;
@@ -229,14 +241,14 @@ int setup_pmc_on_system(pmc_evt_code *codes)
 	// TODO - Check memory leaks
 	pmc_events = codes;
 
-	for (k = 0; k < max_pmc_general; ++k) {
-		pmc_cfgs[k].perf_evt_sel = codes[k];
+	for_each_general_pmc(pmc) {
+		pmc_cfgs[pmc].perf_evt_sel = codes[pmc];
 
 		/* PMCs setup */
-		pmc_cfgs[k].usr = !!(params_cpl_usr);
-		pmc_cfgs[k].os = !!(params_cpl_os);
-		pmc_cfgs[k].pmi = 0;
-		pmc_cfgs[k].en = 1;
+		pmc_cfgs[pmc].usr = !!(params_cpl_usr);
+		pmc_cfgs[pmc].os = !!(params_cpl_os);
+		pmc_cfgs[pmc].pmi = 0;
+		pmc_cfgs[pmc].en = 1;
 	}
 
 old_conf:

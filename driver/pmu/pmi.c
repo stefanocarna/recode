@@ -13,7 +13,6 @@ static struct nmiaction handler_na;
 
 atomic_t active_pmis = ATOMIC_INIT(0);
 
-// DEFINE_PER_CPU(unsigned long, pcpu_pmi_counter) = 2;
 // DEFINE_PER_CPU(u64, pcpu_reset_period);
 
 /*
@@ -53,9 +52,6 @@ static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 
 	handled++;
 
-	/* Backup last used reset_period */
-	// this_cpu_write(pcpu_reset_period, reset_period);
-	// WRITE_FIXED_PMC(fixed_pmc_pmi, this_cpu_read(pcpu_reset_period));
 	WRITE_FIXED_PMC(fixed_pmc_pmi, reset_period);
 
 no_pmi:

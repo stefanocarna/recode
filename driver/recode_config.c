@@ -1,7 +1,7 @@
 #include "recode.h"
 #include "pmu/pmu.h"
 #include "recode_config.h"
-#include "pmc_events.h"
+#include "pmu/pmc_events.h"
 
 #define SAMPLING_PERIOD (BIT_ULL(24) - 1)
 
@@ -47,8 +47,4 @@ pmc_evt_code pmc_events_tma_l2[8] = {
 	
 };
 
-// struct pmc_compute_tma {
-// 	pmc_evt_code *codes;
-
-// };
 

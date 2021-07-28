@@ -14,7 +14,7 @@ EXTRA_CFLAGS +=	-std=gnu99					\
 
 $(MODULE_NAME)-y := recode_config.o
 $(MODULE_NAME)-y += recode_core.o
-$(MODULE_NAME)-y += recode_statistics.o
+$(MODULE_NAME)-y += recode_collector.o
 $(MODULE_NAME)-y += recode_module.o
 $(MODULE_NAME)-y += recode_tma.o
 

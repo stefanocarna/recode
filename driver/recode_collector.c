@@ -1,11 +1,13 @@
 #include <linux/vmalloc.h>
 
 #include "recode.h"
+#include "pmu/pmi.h"
+#include "recode_collector.h"
 
-DEFINE_PER_CPU(struct statistic, pcpu_statistics) = { 0 };
+atomic_t on_samples_flushing = ATOMIC_INIT(0);
 
-bool push_ps_ring(struct pmcs_snapshot_chain *chain,
-                             struct pmcs_snapshot_ring *ring)
+bool push_ps_ring(struct data_logger_chain *chain,
+                             struct data_logger_ring *ring)
 {
 	unsigned long flags;
         if (!ring)
@@ -27,8 +29,8 @@ bool push_ps_ring(struct pmcs_snapshot_chain *chain,
         return true;
 }
 
-bool push_ps_ring_reset(struct pmcs_snapshot_chain *chain,
-                             struct pmcs_snapshot_ring *ring)
+bool push_ps_ring_reset(struct data_logger_chain *chain,
+                             struct data_logger_ring *ring)
 {
         if (!ring)
                 return false;
@@ -37,10 +39,10 @@ bool push_ps_ring_reset(struct pmcs_snapshot_chain *chain,
         return push_ps_ring(chain, ring);
 }
 
-struct pmcs_snapshot_ring *pop_ps_ring(struct pmcs_snapshot_chain *chain)
+struct data_logger_ring *pop_ps_ring(struct data_logger_chain *chain)
 {
 	unsigned long flags;
-        struct pmcs_snapshot_ring *elem = NULL;
+        struct data_logger_ring *elem = NULL;
 	spin_lock_irqsave(&chain->lock, flags);
 	if (chain->head != NULL) {
                 elem = chain->head;
@@ -51,13 +53,13 @@ struct pmcs_snapshot_ring *pop_ps_ring(struct pmcs_snapshot_chain *chain)
         return elem;
 }
 
-struct pmc_logger *init_logger(unsigned cpu)
+struct data_logger *init_logger(unsigned cpu)
 {
         unsigned i;
-        struct pmc_logger *logger;
+        struct data_logger *logger;
 
         // We use a flexbile array to generate p_s_rings
-        logger = vzalloc(sizeof(struct pmc_logger));
+        logger = vzalloc(sizeof(struct data_logger));
         if (!logger) 
 		return NULL;
 
@@ -110,9 +112,9 @@ struct pmc_logger *init_logger(unsigned cpu)
         return logger;
 }
 
-void reset_logger(struct pmc_logger *logger)
+void reset_logger(struct data_logger *logger)
 {
-        struct pmcs_snapshot_ring *psr;
+        struct data_logger_ring *psr;
 
         if (!logger)
                 return;
@@ -137,16 +139,16 @@ void reset_logger(struct pmc_logger *logger)
         logger->count = 0;
 }
 
-void fini_logger(struct pmc_logger *logger)
+void fini_logger(struct data_logger *logger)
 {
         /* Enable if individually allocated */
         vfree(logger->ptr);
         vfree(logger);
 }
 
-int write_log_sample(struct pmc_logger *logger, struct pmcs_snapshot *sample)
+int write_log_sample(struct data_logger *logger, struct data_logger_sample *sample)
 {
-        struct pmcs_snapshot_ring *psr;
+        struct data_logger_ring *psr;
         
         if (WARN_ONCE(!logger, "WRITE Internal error, logger is NULL\n")) {
                 return -1;
@@ -173,7 +175,7 @@ int write_log_sample(struct pmc_logger *logger, struct pmcs_snapshot *sample)
                 }
         }
 
-        memcpy(&psr->buff[psr->idx], sample, sizeof(struct pmcs_snapshot));
+        memcpy(&psr->buff[psr->idx], sample, sizeof(struct data_logger_sample));
 
         psr->idx++;
         logger->count++;
@@ -186,10 +188,10 @@ int write_log_sample(struct pmc_logger *logger, struct pmcs_snapshot *sample)
         return 0;
 }
 
-struct pmcs_snapshot *read_log_sample(struct pmc_logger *logger)
+struct data_logger_sample *read_log_sample(struct data_logger *logger)
 {
-        struct pmcs_snapshot *sample;
-        struct pmcs_snapshot_ring *psr;
+        struct data_logger_sample *sample;
+        struct data_logger_ring *psr;
         
         if (WARN_ONCE(!logger, "READ Internal error, logger is NULL\n")) {
                 return NULL;
@@ -222,8 +224,8 @@ struct pmcs_snapshot *read_log_sample(struct pmc_logger *logger)
 static void flush_written_samples_on_cpu(void *dummy)
 {
         unsigned cpu = get_cpu();
-        struct pmcs_snapshot_ring *psr;
-        struct pmc_logger *logger = per_cpu(pcpu_pmc_logger, cpu);
+        struct data_logger_ring *psr;
+        struct data_logger *logger = per_cpu(pcpu_data_logger, cpu);
 
         pr_debug("Flushing written samples on cpu %u\n", cpu);
 
@@ -248,18 +250,20 @@ end:
 void flush_written_samples_on_system(void)
 {
         atomic_inc(&on_samples_flushing);
-        
+	
+        smp_mb();
         while(atomic_read(&active_pmis))
                 ;
+        smp_mb();
 
         on_each_cpu(flush_written_samples_on_cpu, NULL, 1);
         
         atomic_dec(&on_samples_flushing);
 }
 
-bool check_log_sample(struct pmc_logger *logger)
+bool check_log_sample(struct data_logger *logger)
 {
-        struct pmcs_snapshot_ring *psr;
+        struct data_logger_ring *psr;
         
         if (WARN_ONCE(!logger, "CHECK Internal error, logger is NULL\n")) {
                 return NULL;
