@@ -1,3 +1,6 @@
+from .printer import *
+
+
 PLUGIN_NAME = "config"
 HELP_DESC = "Configure Recode Module's paramenters"
 
@@ -55,7 +58,7 @@ def action_state(action):
         action_state("off")
         value = "2"
     else:
-        print("Something wrong: --state " + action + " illegal")
+        pr_warn("Something wrong: --state " + action + " illegal")
 
     _file.write(value)
     _file.close()
@@ -64,7 +67,7 @@ def action_state(action):
 def action_frequency(value):
     value = int(value)
     if value < 1 and value > 48:
-        print("frequency is expressed as (1 << P) + 1")
+        pr_warn("frequency must be expressed as (1 << P) + 1")
         return
 
     pmc_mask = (1 << 48) - 1
@@ -80,7 +83,7 @@ def action_frequency(value):
 
 def get_info(info):
     if info not in ["frequency", "events", "thresholds"]:
-        print("Cannot read " + info + " info. Returning 0")
+        pr_warn("Cannot read " + info + " info. Returning 0")
         return 0
 
     path = RECODE_PROC_PATH + "/" + info
@@ -91,10 +94,10 @@ def get_info(info):
 
 
 def action_info():
-    print("### Recode info")
-    print(" - frequency:\t" + hex(int("0x" + get_info("frequency"), 0)))
-    print(" - events:\t" + get_info("events"))
-    print(" - thresholds:\t" + get_info("thresholds"))
+    pr_info("Recode info:")
+    pr_text(" - frequency:\t" + hex(int("0x" + get_info("frequency"), 0)))
+    pr_text(" - events:\t" + get_info("events"))
+    pr_text(" - thresholds:\t" + get_info("thresholds"))
 
 
 def validate_args(args):

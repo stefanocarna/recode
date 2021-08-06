@@ -1,6 +1,7 @@
 import os
 import json
 import pandas as pd
+from .printer import *
 from .proc_reader import ProcCpuReader
 
 PLUGIN_NAME = "data"
@@ -47,7 +48,7 @@ def setParserArguments(parser):
 def __read_proc_cpu(cpuFile):
     fileName = RECODE_PROC_CPUS_PATH + "/" + cpuFile
     file = open(fileName)
-    print("Reading " + fileName)
+    pr_info("Reading " + fileName + ":")
     data = ""
 
     lines = file.readlines()
@@ -68,9 +69,9 @@ def action_read(args):
 
     if (args == READ_ALL_CPUS):
         for cpuFile in os.listdir(RECODE_PROC_CPUS_PATH):
-            print(__read_proc_cpu(cpuFile))
+            pr_text(__read_proc_cpu(cpuFile))
     else:
-        print(__read_proc_cpu("cpu" + str(args)))
+        pr_text(__read_proc_cpu("cpu" + str(args)))
 
 
 def action_extract(args):
@@ -100,7 +101,6 @@ def action_extract(args):
             cpuDict["data"] = parsed
             cpuList.append(cpuDict)
 
-        # print(parsed)
         pcr.close()
 
     file.write(json.dumps(cpuList, indent=4))
@@ -116,9 +116,7 @@ def compute(args):
     if not validate_args(args):
         return False
 
-    print(args)
-
-    if args.read:
+    if args.read is not None:
         action_read(args.read)
 
     if args.extract:

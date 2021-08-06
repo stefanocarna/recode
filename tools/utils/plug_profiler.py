@@ -1,5 +1,6 @@
 import os
 from .cmd import cmd
+from .printer import *
 
 PLUGIN_NAME = "profiler"
 HELP_DESC = "Configure profiling activity"
@@ -54,14 +55,14 @@ def action_exec(prog, args, timeout, cpu, profile=True):
         cmd("make")
 
     if timeout is not None and timeout < 0:
-        print("Invalid timeout (< 0). Ignore timeout")
+        pr_warn("Invalid timeout (< 0). Ignore timeout")
         timeout = None
 
     _cmd = ["./" + wrapper] if profile else []
 
     if cpu is not None:
         if cpu < 0 or cpu >= os.cpu_count():
-            print("Invalid cpu " + str(cpu) + ". Ignore cpu mask")
+            pr_warn("Invalid cpu " + str(cpu) + ". Ignore cpu mask")
 
         else:
             _cmd = ["taskset", "-c", str(cpu)] + _cmd
@@ -71,14 +72,14 @@ def action_exec(prog, args, timeout, cpu, profile=True):
     if args is not None:
         _cmd = _cmd + args.split()
 
-    print("Exec: " + str(_cmd) + " @ " + str(timeout))
+    pr_info("Exec: " + str(_cmd) + " @ " + str(timeout))
     out, err, ret = cmd(_cmd, timeOut=timeout)
 
     if ret != 0:
-        print("Execution failed with errcode " + str(ret))
-        print("ERR pipe: " + str(err))
+        pr_err("Execution failed with errcode " + str(ret) + ":")
+        pr_warn(" * " + str(err))
     else:
-        print("OUT pipe: " + out)
+        pr_text("OUT pipe: " + out)
 
 
 def validate_args(args):

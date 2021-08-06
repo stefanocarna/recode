@@ -1,6 +1,6 @@
-from .cmd import Pipe
-from .cmd import cmd
 import os
+from .cmd import cmd
+from .printer import *
 from pathlib import Path
 
 
@@ -56,49 +56,49 @@ def setParserArguments(parser):
 def __perform_action(action):
 
     if (action is None or action == ""):
-        print("Something wrong: --module illegal")
+        pr_warn("Something wrong: --module illegal")
+        return
 
     out, err, ret = cmd(action, sh=True)
 
     if ret != 0:
-        print("Module action failed with retCode " + str(ret))
-        print("Error log: ")
+        pr_err("Module action failed with retCode " + str(ret) + ":")
         for line in err.strip().split("\n"):
-            print(" \" " + line)
+            pr_warn(" * " + line)
     else:
-        print("Done")
+        pr_succ("Done")
 
     return ret
 
 
 def action_load():
     action = "make insert"
-    print("Mounting module...")
+    pr_info("Mounting module...")
     return __perform_action(action)
 
 
 def action_unload():
     action = "make remove"
-    print("Unmounting module...")
+    pr_info("Unmounting module...")
     return __perform_action(action)
 
 
 def action_load_debug():
     action = "make debug"
-    print("Mounting module (Debug ON)...")
+    pr_info("Mounting module (Debug ON)...")
     return __perform_action(action)
 
 
 def action_compile():
     nr_cpu = str(os.cpu_count())
     action = "make -j" + nr_cpu
-    print("Compiling module...")
+    pr_info("Compiling module...")
     return __perform_action(action)
 
 
 def action_clean_compile():
     action = "make clean"
-    print("Clean module...")
+    pr_info("Clean module...")
     __perform_action(action)
     return action_compile()
 
@@ -108,7 +108,7 @@ def validate_args(args):
         return False
 
     if args.load and args.load_debug:
-        print("Cannot execute load twice...")
+        pr_warn("Cannot execute load twice...")
         return False
 
     return True
