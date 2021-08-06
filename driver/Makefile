@@ -30,7 +30,6 @@ $(MODULE_NAME)-y += pmu/multiplexer.o
 
 $(MODULE_NAME)-y += device/proc.o
 $(MODULE_NAME)-y += device/proc_cpus.o
-$(MODULE_NAME)-y += device/proc_events.o
 $(MODULE_NAME)-y += device/proc_frequency.o
 $(MODULE_NAME)-y += device/proc_hw_events.o
 $(MODULE_NAME)-y += device/proc_processes.o
