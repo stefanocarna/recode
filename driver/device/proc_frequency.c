@@ -7,7 +7,7 @@
 
 static int frequency_seq_show(struct seq_file *m, void *v)
 {
-	u64 val = reset_period;
+	u64 val = gbl_reset_period;
 
 	seq_printf(m, "%llx\n", val);
 
@@ -33,7 +33,7 @@ static ssize_t frequency_write(struct file *filp,
 
 	sscanf(buffer, "%llx", &val);
 
-	reset_period = val;
+	gbl_reset_period = val;
 
 	return count;
 }

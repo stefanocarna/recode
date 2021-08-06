@@ -3,18 +3,14 @@
 
 #include "pmu/pmu.h"
 
-extern u64 __read_mostly reset_period;
-extern unsigned __read_mostly fixed_pmc_pmi;
+extern u64 __read_mostly gbl_reset_period;
+extern unsigned __read_mostly gbl_fixed_pmc_pmi;
 
 /* TODO Refactor */
 extern unsigned params_cpl_os;
 extern unsigned params_cpl_usr;
 
-#define RING_BUFF_LENGTH 12
-#define RING_SIZE (sizeof(struct data_logger_ring))
-
-#define RING_COUNT 128
-#define BUFF_MEMORY RING_COUNT * RING_SIZE
+#define BUFFER_MEMORY_SIZE (1024 * 1024 * 256)
 
 enum recode_pmi_vector {
 	NMI,

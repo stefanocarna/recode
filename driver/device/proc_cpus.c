@@ -5,8 +5,6 @@
 #include "recode_config.h"
 #include "recode_collector.h"
 
-#define DATA_HEADER "# PID,TRACKED,KTHREAD,CTX_EVT,TIME,TSC,INST,CYCLES,TSC_CYCLES"
-
 extern unsigned int tsc_khz;
 
 /* 
@@ -15,41 +13,36 @@ extern unsigned int tsc_khz;
 
 static void *cpu_logger_seq_start(struct seq_file *m, loff_t *pos)
 {
-	unsigned pmc;
-	struct data_logger *data;
+	// unsigned pmc;
+	unsigned *cpu = (unsigned *) PDE_DATA(file_inode(m->file));
+	struct data_collector *dc = per_cpu(pcpu_data_collector, *cpu);
+	struct hw_events *hw_events;
 
-	data = (struct data_logger *)PDE_DATA(file_inode(m->file));
-	if (!data)
+	if (!dc)
 		goto no_data;
 	
-	if (!check_log_sample(data))
+	if (!check_read_dc_sample(dc))
 		goto no_data;
 
-	/* Print header */
-	if (!(*pos)) {
-		seq_printf(m, DATA_HEADER);
-		for_each_general_pmc(pmc)
-			if (pmc_events[pmc]) {
-				seq_printf(m, ",%llx", pmc_events[pmc]);
-			}
-		seq_printf(m, "\n");
-	}
+	hw_events = per_cpu(pcpu_pmus_metadata.hw_events, *cpu);
+	if (!hw_events)
+		goto no_data;
 
 	return pos;
 
 no_data:
-	pr_warn("Cannot read data: %u\n", !data->rd.head);
+	pr_warn("Cannot read data\n");
 	return NULL;
 }
 
 static void *cpu_logger_seq_next(struct seq_file *m, void *v, loff_t *pos)
 {
-	struct data_logger *data;
-	data = (struct data_logger *)PDE_DATA(file_inode(m->file));
+	unsigned *cpu = (unsigned *) PDE_DATA(file_inode(m->file));
+	struct data_collector *dc = per_cpu(pcpu_data_collector, *cpu);
 	
 	(*pos)++;
 
-	if (!check_log_sample(data))
+	if (!check_read_dc_sample(dc))
 		goto err;
 
 	return pos;
@@ -61,32 +54,34 @@ static int cpu_logger_seq_show(struct seq_file *m, void *v)
 {
 	u64 time;
 	unsigned pmc;
-	struct data_logger *data;
-	struct pmcs_snapshot *pmcs;
-	struct data_logger_sample *sample;
+	struct data_collector_sample *dc_sample;
 	
-	data = (struct data_logger *)PDE_DATA(file_inode(m->file));
+	unsigned *cpu = (unsigned *) PDE_DATA(file_inode(m->file));
+	struct data_collector *dc = per_cpu(pcpu_data_collector, *cpu);
 
-	if (!v)
+	if (!v || !dc)
 		goto err;
 		
-	sample = read_log_sample(data);
+	dc_sample = get_read_dc_sample(dc);
 
-	if (!sample)
+	if (!dc_sample)
 		goto err;
 
-	pmcs = &sample->pmcs;
-	time = pmcs->tsc / tsc_khz;
+	// pmcs = &sample->pmcs;
+	// time = pmcs->tsc / tsc_khz;
+	time = 0;
 
-	seq_printf(m, "%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu", sample->id,
-	           sample->tracked, sample->k_thread, sample->ctx_evt, time,
-		   pmcs->tsc, pmcs->fixed[0], pmcs->fixed[1], pmcs->fixed[2]);
+	// seq_printf(m, "%u,%u,%u,%u,%llu,%llu,%llu,%llu,%llu", sample->id,
+	//            sample->tracked, sample->k_thread, sample->ctx_evt, time,
+	// 	   pmcs->tsc, pmcs->fixed[0], pmcs->fixed[1], pmcs->fixed[2]);
 
-	for_each_general_pmc(pmc) {
-		if (pmc_events[pmc]) {
-			seq_printf(m, ",%llu", pmcs->general[pmc]);
-		}
-	}
+	seq_printf(m, "[%llx]", dc_sample->pmcs.mask);
+	
+	for_each_pmc(pmc, dc_sample->pmcs.cnt)
+		seq_printf(m, ",%llu", dc_sample->pmcs.pmcs[pmc]);
+
+	put_read_dc_sample(dc);
+
 	seq_printf(m, "\n");
 	
 	return 0;
@@ -121,19 +116,27 @@ struct proc_ops cpu_logger_proc_fops = {
 int register_proc_cpus(void)
 {
 	unsigned cpu;
+	unsigned *cpus;
 	char name[17];
 	struct proc_dir_entry *dir;
 	struct proc_dir_entry *tmp_dir;
 
 	dir = proc_mkdir(GET_PATH("cpus"), NULL);
 
+	cpus = vmalloc(sizeof(unsigned) * nr_cpu_ids);
+	if (!cpus) {
+		pr_warn("Cannot allocate memory\n");
+		return -ENOMEM;
+	}
+
 	for_each_online_cpu (cpu) {
+		cpus[cpu] = cpu;
 		sprintf(name, "cpu%u", cpu);
 
 		/* memory leak when releasing */
 		tmp_dir =
 			proc_create_data(name, 0444, dir, &cpu_logger_proc_fops,
-					 per_cpu(pcpu_data_logger, cpu));
+					 &cpus[cpu]);
 
 		// TODO Add cleanup code
 		if (!tmp_dir)

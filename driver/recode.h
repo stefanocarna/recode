@@ -6,6 +6,8 @@
 #include <linux/sched.h>
 #include <linux/string.h>
 
+#include "pmu/pmu_structs.h"
+
 #if __has_include(<asm/fast_irq.h>)
 #define FAST_IRQ_ENABLED 1
 #endif
@@ -43,6 +45,8 @@ extern void detach_process(pid_t id);
 
 /* Recode PMI */
 extern void pmi_function(unsigned cpu);
+
+void setup_hw_events_from_proc(pmc_evt_code *hw_events_codes, unsigned cnt);
 
 /* Recode TMA */
 // extern void pmc_evaluate_tma(unsigned cpu, struct pmcs_snapshot *pmcs);

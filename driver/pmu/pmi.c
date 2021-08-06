@@ -6,14 +6,14 @@
 #include "recode.h"
 #include "pmu/pmi.h"
 #include "pmu/pmu.h"
+#include "pmu/multiplexer.h"
 #include "recode_config.h"
 
+/* TODO - place inside metadata */
 static DEFINE_PER_CPU(u32, pcpu_lvt_bkp);
 static struct nmiaction handler_na;
 
 atomic_t active_pmis = ATOMIC_INIT(0);
-
-// DEFINE_PER_CPU(u64, pcpu_reset_period);
 
 /*
  * Performance Monitor Interrupt handler
@@ -30,12 +30,12 @@ static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 	/* Nothing to do here */
 	if (!global) {
 		pr_info("[%u] Got PMI on vector %u - FIXED: %llx\n", 
-		cpu, fixed_pmc_pmi, (u64) READ_FIXED_PMC(fixed_pmc_pmi));
+		cpu, gbl_fixed_pmc_pmi, (u64) READ_FIXED_PMC(gbl_fixed_pmc_pmi));
 		goto end;
 	}
 
 	/* This IRQ is not originated from PMC overflow */
-	if(!(global & (PERF_GLOBAL_CTRL_FIXED0_MASK << fixed_pmc_pmi)) &&
+	if(!(global & (PERF_GLOBAL_CTRL_FIXED0_MASK << gbl_fixed_pmc_pmi)) &&
 	   !(global && PERF_COND_CHGD_IGNORE_MASK)) {
 		pr_info("Something triggered PMI - GLOBAL: %llx\n", global);
 		goto no_pmi;
@@ -48,11 +48,12 @@ static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 	 * request. 	 
 	 */
 
-	pmi_function(cpu);
+	if (pmc_multiplexing_on_pmi(cpu))
+		pmi_function(cpu);
 
 	handled++;
 
-	WRITE_FIXED_PMC(fixed_pmc_pmi, reset_period);
+	WRITE_FIXED_PMC(gbl_fixed_pmc_pmi, gbl_reset_period);
 
 no_pmi:
 	if (recode_pmi_vector == NMI) {
@@ -118,10 +119,12 @@ static int fast_irq_pmi_handler(void)
 
 int pmi_irq_setup(void)
 {
+#ifdef CONFIG_RUNNING_ON_VM
+	return 0;
+#else
 #ifndef FAST_IRQ_ENABLED
 	pr_info("PMI on IRQ not available on this kernel. Proceed with NMI\n");
 	return pmi_nmi_setup();
-}
 #else
 	int irq = 0;
 
@@ -134,8 +137,9 @@ int pmi_irq_setup(void)
 		return -1;
 
 	return 0;
-}
 #endif
+#endif
+}
 
 void pmi_irq_cleanup(void)
 {

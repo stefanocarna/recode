@@ -31,8 +31,8 @@ extern void init_proc(void);
 extern void fini_proc(void);
 
 extern int register_proc_cpus(void);
-extern int register_proc_events(void);
 extern int register_proc_frequency(void);
+extern int register_proc_hw_events(void);
 extern int register_proc_processes(void);
 extern int register_proc_state(void);
 extern int register_proc_statistics(void);

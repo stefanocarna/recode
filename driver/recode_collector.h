@@ -4,61 +4,42 @@
 #include "pmu/pmu.h"
 #include "recode_config.h"
 
-DECLARE_PER_CPU(struct data_logger *, pcpu_data_logger);
-
-extern atomic_t on_samples_flushing;
-
-struct data_logger_sample {
+struct data_collector_sample {
 	pid_t id;
 	unsigned tracked;
 	unsigned k_thread;
 	unsigned ctx_evt;
-	struct pmcs_snapshot pmcs;
+	struct pmcs_collection pmcs;
 };
 
-struct data_logger_ring {
-	unsigned idx;
-	unsigned length;
-	struct data_logger_ring *next;
-	struct data_logger_sample buff[RING_BUFF_LENGTH];
-};
-
-struct data_logger_chain {
-	spinlock_t lock;
-	struct data_logger_ring *head;
-	struct data_logger_ring *tail;
-};
-
-struct data_logger {
+struct data_collector {
 	unsigned cpu;
-	unsigned count;
-	struct data_logger_ring *ptr;
-	struct data_logger_chain chain;
-	struct data_logger_chain wr;
-	struct data_logger_chain rd;
+	unsigned rd_i;
+	unsigned rd_p;
+	unsigned ov_i;
+	unsigned wr_i;
+	unsigned wr_p;
+	size_t size;
+	u8 raw_memory[];
 };
 
-extern struct data_logger *init_logger(unsigned cpu);
-extern void fini_logger(struct data_logger *logger);
-extern void reset_logger(struct data_logger *logger);
+DECLARE_PER_CPU(struct data_collector *, pcpu_data_collector);
 
-extern int write_log_sample(struct data_logger *logger,
-                            struct data_logger_sample *sample);
+extern atomic_t on_dc_samples_flushing;
 
-extern struct data_logger_sample *read_log_sample(struct data_logger *logger);
+struct data_collector *init_collector(unsigned cpu);
 
-extern bool check_log_sample(struct data_logger *logger);
+void fini_collector(unsigned cpu);
 
-extern int flush_logs(struct data_logger *logger);
+struct data_collector_sample *get_write_dc_sample(struct data_collector *dc,
+						  unsigned hw_events_cnt);
 
-extern bool push_ps_ring(struct data_logger_chain *chain,
-                             struct data_logger_ring *ring);
+void put_write_dc_sample(struct data_collector *dc);
 
-extern bool push_ps_ring_reset(struct data_logger_chain *chain,
-                             struct data_logger_ring *ring);
+struct data_collector_sample *get_read_dc_sample(struct data_collector *dc);
 
-extern void flush_written_samples_on_system(void);
+void put_read_dc_sample(struct data_collector *dc);
 
-extern struct data_logger_ring *pop_ps_ring(struct data_logger_chain *chain);
+bool check_read_dc_sample(struct data_collector *dc);
 
 #endif /* _RECODE_COLLECTOR_H */

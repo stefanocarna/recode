@@ -1,6 +1,5 @@
-
-#ifndef _RECODE_PMI_H
-#define _RECODE_PMI_H
+#ifndef _PMI_H
+#define _PMI_H
 
 #define NMI_NAME "RECODE_PMI"
 #define PERF_COND_CHGD_IGNORE_MASK (BIT_ULL(63) - 1)
@@ -22,4 +21,4 @@ void pmi_irq_cleanup(void);
 
 extern atomic_t active_pmis;
 
-#endif /* _RECODE_PMI_H */
+#endif /* _PMI_H */

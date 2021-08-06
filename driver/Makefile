@@ -16,7 +16,7 @@ $(MODULE_NAME)-y := recode_config.o
 $(MODULE_NAME)-y += recode_core.o
 $(MODULE_NAME)-y += recode_collector.o
 $(MODULE_NAME)-y += recode_module.o
-$(MODULE_NAME)-y += recode_tma.o
+# $(MODULE_NAME)-y += recode_tma.o
 
 DEVICE_DIR 	:= device
 DEVICE_SOURCES 	:= $(wildcard $(DEVICE_DIR)/*.c)
@@ -26,11 +26,13 @@ DEVICE_OBJECTS 	:= $(DEVICE_SOURCES:%.c=%.o)
 
 $(MODULE_NAME)-y += pmu/pmi.o
 $(MODULE_NAME)-y += pmu/pmu.o
+$(MODULE_NAME)-y += pmu/multiplexer.o
 
 $(MODULE_NAME)-y += device/proc.o
 $(MODULE_NAME)-y += device/proc_cpus.o
 $(MODULE_NAME)-y += device/proc_events.o
 $(MODULE_NAME)-y += device/proc_frequency.o
+$(MODULE_NAME)-y += device/proc_hw_events.o
 $(MODULE_NAME)-y += device/proc_processes.o
 $(MODULE_NAME)-y += device/proc_state.o
 $(MODULE_NAME)-y += device/proc_statistics.o
