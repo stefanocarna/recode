@@ -5,6 +5,9 @@
 
 #include <linux/percpu.h>
 
+extern u64 __read_mostly gbl_reset_period;
+extern unsigned __read_mostly gbl_fixed_pmc_pmi;
+
 #define MSR_CORE_PERF_GENERAL_CTR0 MSR_IA32_PERFCTR0
 #define MSR_CORE_PERFEVTSEL_ADDRESS0 MSR_P6_EVNTSEL0
 
@@ -39,7 +42,9 @@ DECLARE_PER_CPU(struct pmus_metadata, pcpu_pmus_metadata);
 extern unsigned __read_mostly gbl_nr_pmc_fixed;
 extern unsigned __read_mostly gbl_nr_pmc_general;
 
-extern u64 active_mask;
+#define MAX_HW_EVENTS 8
+extern unsigned __read_mostly gbl_nr_hw_events;
+extern struct hw_events * __read_mostly gbl_hw_events[MAX_HW_EVENTS];
 extern pmc_evt_code HW_EVENTS_BITS[];
 
 #define FIXED_TO_BITS_MASK                                                     \
@@ -73,7 +78,6 @@ void disable_pmc_on_system(void);
 struct pmcs_collection *get_pmcs_collection_on_this_cpu(void);
 
 void get_machine_configuration(void);
-void read_all_pmcs(struct pmcs_snapshot *snapshot);
 
 int setup_hw_events_on_system(pmc_evt_code *hw_events_codes, unsigned cnt);
 

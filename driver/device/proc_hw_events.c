@@ -10,19 +10,21 @@
 
 static int sampling_hw_events_show(struct seq_file *m, void *v)
 {
-	unsigned i;
+	unsigned k, i;
 
 	seq_printf(m, "%s\n", DATA_HEADER);
 
-	seq_printf(m, "%llx\t\t", active_mask);
-
-	for (i = 0; i < 64; i++) {
-		/* Check bit */
-		if (active_mask & BIT(i)) {
-			seq_printf(m, "%x,", HW_EVENTS_BITS[i].raw);
-		}
+	for (k = 0; k < gbl_nr_hw_events; ++k) {
+		seq_printf(m, "%llx\t\t", gbl_hw_events[k]->mask);
+			/* Check bit - Avoid comma*/
+			for (i = 0; i < 64; i++) {
+				/* Check bit */
+				if (gbl_hw_events[k]->mask & BIT(i)) {
+					seq_printf(m, ",%x", HW_EVENTS_BITS[i].raw);
+				}
+			}
+			seq_printf(m, "\n");
 	}
-	seq_printf(m, "\n");
 
 	return 0;
 }
@@ -32,14 +34,14 @@ static int hw_events_open(struct inode *inode, struct file *filp)
 	return single_open(filp, sampling_hw_events_show, NULL);
 }
 
-#define MAX_HW_EVENTS 32
+#define MAX_USER_HW_EVENTS 32
 
 static ssize_t hw_events_write(struct file *filp, const char __user *buffer_user,
 			    size_t count, loff_t *ppos)
 {
 	int err, i = 0;
 	char *p, *buffer;
-	pmc_evt_code codes[MAX_HW_EVENTS];
+	pmc_evt_code codes[MAX_USER_HW_EVENTS];
 
 	buffer = (char *)kzalloc(sizeof(char) * count, GFP_KERNEL);
 	err = copy_from_user((void *)buffer, (void *)buffer_user,
@@ -49,7 +51,7 @@ static ssize_t hw_events_write(struct file *filp, const char __user *buffer_user
 		return err;
 
 	/* Parse hw_events from user input */
-	while ((p = strsep(&buffer, ",")) != NULL && i < MAX_HW_EVENTS)
+	while ((p = strsep(&buffer, ",")) != NULL && i < MAX_USER_HW_EVENTS)
 		sscanf(p, "%x", &codes[i++].raw);
 
 	setup_hw_events_from_proc(codes, i);

@@ -3,9 +3,6 @@
 
 #include "pmu/pmu.h"
 
-extern u64 __read_mostly gbl_reset_period;
-extern unsigned __read_mostly gbl_fixed_pmc_pmi;
-
 /* TODO Refactor */
 extern unsigned params_cpl_os;
 extern unsigned params_cpl_usr;

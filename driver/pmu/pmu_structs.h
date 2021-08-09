@@ -4,11 +4,12 @@
 #include <linux/types.h>
 
 typedef u64 pmc_ctr;
+
 typedef union {
 	u32 raw;
 	struct {
-		u8 umask;
 		u8 evt;
+		u8 umask;
 		u8 reserved;
 		u8 cmask;
 	};
@@ -56,6 +57,9 @@ struct pmus_metadata {
 	u64 perf_global_ctrl;
 	bool pmcs_active;
 
+	pmc_ctr pmi_reset_value;
+	unsigned pmi_partial_cnt;
+	
 	unsigned hw_events_index;
 	struct hw_events *hw_events;
 	struct pmcs_collection *pmcs_collection;

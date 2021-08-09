@@ -54,7 +54,8 @@ DEFINE_PER_CPU(struct pmus_metadata, pcpu_pmus_metadata) = { 0 };
 unsigned __read_mostly gbl_nr_pmc_fixed = 0;
 unsigned __read_mostly gbl_nr_pmc_general = 0;
 
-u64 active_mask = 0;
+unsigned __read_mostly gbl_nr_hw_events = 0;
+struct hw_events * __read_mostly gbl_hw_events[MAX_HW_EVENTS] = { 0 };
 
 void get_machine_configuration(void)
 {
@@ -93,6 +94,7 @@ void fast_setup_general_pmc_on_cpu(unsigned cpu, struct pmc_evt_sel *pmc_cfgs,
 
 	ctrl = FIXED_TO_BITS_MASK | (BIT_ULL(cnt) - 1);
 
+
 	/* Uneeded PMCs are disabled in ctrl */
 	for_each_active_general_pmc (ctrl, pmc) {
 		SETUP_GENERAL_PMC(pmc, pmc_cfgs[pmc + off].perf_evt_sel);
@@ -102,39 +104,8 @@ void fast_setup_general_pmc_on_cpu(unsigned cpu, struct pmc_evt_sel *pmc_cfgs,
 	per_cpu(pcpu_pmus_metadata.perf_global_ctrl, cpu) = ctrl;
 }
 
-void read_all_pmcs(struct pmcs_snapshot *snapshot)
-{
-	/* TODO - Check */
-
-	// unsigned pmc;
-	// if (!snapshot) {
-	// 	pr_warn("Cannot save PMCs on NULL snapshot\n");
-	// 	return;
-	// }
-
-	// snapshot->tsc = (u64)rdtsc_ordered();
-
-	// /* Read all active fixed pmcs */
-	// for_each_fixed_pmc (pmc) {
-	// 	if (perf_global_ctrl &
-	// 	    BIT_ULL(pmc + PERF_GLOBAL_CTRL_FIXED0_SHIFT)) {
-	// 		snapshot->fixed[pmc] = READ_FIXED_PMC(pmc);
-	// 	}
-	// }
-	// /* Read all active general pmcs */
-	// for_each_general_pmc (pmc) {
-	// 	if (perf_global_ctrl & BIT_ULL(pmc)) {
-	// 		snapshot->general[pmc] = READ_GENERAL_PMC(pmc);
-	// 	}
-	// }
-}
-
 static void __enable_pmc_on_cpu(void *dummy)
 {
-	// TODO - Remove
-	if (smp_processor_id() != 3)
-		return;
-
 	if (recode_state == OFF) {
 		pr_warn("Cannot enable pmc on cpu %u while Recode is OFF\n",
 			smp_processor_id());
@@ -144,7 +115,9 @@ static void __enable_pmc_on_cpu(void *dummy)
 #ifndef CONFIG_RUNNING_ON_VM
 	wrmsrl(MSR_CORE_PERF_GLOBAL_CTRL,
 	       this_cpu_read(pcpu_pmus_metadata.perf_global_ctrl));
-	pr_debug("enabled pmcs on cpu %u\n", smp_processor_id());
+	pr_debug("enabled pmcs on cpu %u - gbl_ctrl: %llx\n",
+		 smp_processor_id(),
+		 this_cpu_read(pcpu_pmus_metadata.perf_global_ctrl));
 #endif
 }
 
@@ -205,6 +178,7 @@ struct pmcs_collection *get_pmcs_collection_on_this_cpu(void)
 void debug_pmu_state(void)
 {
 	u64 msr;
+	unsigned pmc;
 	unsigned cpu = get_cpu();
 
 	pr_info("Init PMU debug on core %u\n", cpu);
@@ -215,10 +189,21 @@ void debug_pmu_state(void)
 	rdmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, msr);
 	pr_info("MSR_CORE_PERF_FIXED_CTR_CTRL: %llx\n", msr);
 
-	pr_info("GP 0: %llx\n", QUERY_GENERAL_PMC(0));
-	pr_info("GP 1: %llx\n", QUERY_GENERAL_PMC(1));
-	pr_info("GP 2: %llx\n", QUERY_GENERAL_PMC(2));
-	pr_info("GP 3: %llx\n", QUERY_GENERAL_PMC(3));
+	rdmsrl(MSR_CORE_PERF_GLOBAL_CTRL, msr);
+	pr_info("MSR_CORE_PERF_GLOBAL_CTRL: %llx\n", msr);
+
+	pr_debug("GP_sel 0: %llx\n", QUERY_GENERAL_PMC(0));
+	pr_debug("GP_sel 1: %llx\n", QUERY_GENERAL_PMC(1));
+	pr_debug("GP_sel 2: %llx\n", QUERY_GENERAL_PMC(2));
+	pr_debug("GP_sel 3: %llx\n", QUERY_GENERAL_PMC(3));
+
+	for_each_fixed_pmc (pmc) {
+		pr_debug("FX_ctrl %u: %llx\n", pmc, READ_FIXED_PMC(pmc));
+	}
+
+	for_each_general_pmc (pmc) {
+		pr_debug("GP_ctrl %u: %llx\n", pmc, READ_GENERAL_PMC(pmc));
+	}
 
 	pr_info("Fini PMU debug on core %u\n", cpu);
 
@@ -234,6 +219,7 @@ void setup_hw_events_on_cpu(void *hw_events)
 {
 	bool state;
 	unsigned cnt;
+	pmc_ctr reset_period;
 	struct pmcs_collection *pmcs_collection;
 
 	__save_and_disable_pmc_on_this_cpu(&state);
@@ -280,20 +266,41 @@ skip_alloc:
 	this_cpu_write(pcpu_pmus_metadata.hw_events_index, 0);
 	this_cpu_write(pcpu_pmus_metadata.hw_events, hw_events);
 
+	if (cnt <= gbl_nr_pmc_general) {
+		reset_period = gbl_reset_period;
+	} else {
+		reset_period =
+			gbl_reset_period / ((cnt / gbl_nr_pmc_general) + 1);
+	}
+
+	reset_period = PMC_TRIM(~reset_period);
+
+	this_cpu_write(pcpu_pmus_metadata.pmi_reset_value, reset_period);
+	pr_debug("[%u] Reset period set: %llx - Multiplexing time: %u\n",
+		 smp_processor_id(), reset_period,
+		 (cnt / gbl_nr_pmc_general) + 1);
+
 	fast_setup_general_pmc_on_cpu(smp_processor_id(),
 				      ((struct hw_events *)hw_events)->cfgs, 0,
 				      cnt);
+
+	WRITE_FIXED_PMC(gbl_fixed_pmc_pmi,
+			this_cpu_read(pcpu_pmus_metadata.pmi_reset_value));
 
 end:
 	__restore_and_enable_pmc_on_this_cpu(&state);
 }
 
-/* TODO - When the hw_events is configured the old hw_events is not freed */
 int setup_hw_events_on_system(pmc_evt_code *hw_events_codes, unsigned cnt)
 {
 	u64 mask;
 	unsigned b, i;
 	struct hw_events *hw_events;
+
+	if (gbl_nr_hw_events == MAX_HW_EVENTS) {
+		pr_warn("Cannot register more hw_events sets\n");
+		return -ENOBUFS;
+	}
 
 	pr_debug("Expected %u he_events_codes\n", cnt);
 
@@ -305,12 +312,13 @@ int setup_hw_events_on_system(pmc_evt_code *hw_events_codes, unsigned cnt)
 	mask = compute_hw_events_mask(hw_events_codes, cnt);
 
 	/* Check if the mask is already registered */
-	if (active_mask == mask) {
-		pr_debug("Mask %llx is already used. Skip\n", mask);
-		return 0;
+	for (i = 0; i < gbl_nr_hw_events; ++i) {
+		if (gbl_hw_events[i]->mask == mask) {
+			pr_debug("Mask %llx is already used. Just setup\n", mask);
+			hw_events = gbl_hw_events[i];
+			goto setup_done;
+		}
 	}
-
-	active_mask = mask;
 
 	hw_events = kzalloc(sizeof(struct hw_events) +
 				    (sizeof(struct pmc_evt_sel) * cnt),
@@ -320,7 +328,6 @@ int setup_hw_events_on_system(pmc_evt_code *hw_events_codes, unsigned cnt)
 		pr_warn("Cannot allocate memory for hw_events\n");
 		return -ENOMEM;
 	}
-
 
 	/* Remove duplicates */
 	for (i = 0, b = 0; b < 64; ++b) {
@@ -341,10 +348,11 @@ int setup_hw_events_on_system(pmc_evt_code *hw_events_codes, unsigned cnt)
 	hw_events->cnt = i;
 	hw_events->mask = mask;
 
-	// TODO restore
-	on_each_cpu(setup_hw_events_on_cpu, hw_events, 1);
+	gbl_hw_events[gbl_nr_hw_events++] = hw_events;
 
+setup_done:
 	pr_info("HW_MASK: %llx\n", hw_events->mask);
+	on_each_cpu(setup_hw_events_on_cpu, hw_events, 1);
 
 	return 0;
 }
@@ -368,7 +376,6 @@ static void __init_pmu_on_cpu(void *dummy)
 	/* Enable FREEZE_ON_PMI */
 	wrmsrl(MSR_IA32_DEBUGCTLMSR, BIT(12));
 
-	/* TODO - At the moment both fixed_ctrl and gbl_fixed_pmc_pmi are global */
 	for_each_fixed_pmc (pmc) {
 		if (pmc == gbl_fixed_pmc_pmi) {
 			WRITE_FIXED_PMC(pmc, gbl_reset_period);
@@ -381,7 +388,7 @@ static void __init_pmu_on_cpu(void *dummy)
 	wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL,
 	       this_cpu_read(pcpu_pmus_metadata.fixed_ctrl));
 
-	/* TODO - MAke it compliant to pcpu_pmus_metadata.fixed_ctrl */
+	/* TODO - Make it compliant to pcpu_pmus_metadata.fixed_ctrl */
 	this_cpu_write(pcpu_pmus_metadata.perf_global_ctrl, FIXED_TO_BITS_MASK);
 
 #else
@@ -426,6 +433,12 @@ void cleanup_pmc_on_system(void)
 {
 	/* TODO - To be implemented */
 	on_each_cpu(__disable_pmc_on_cpu, NULL, 1);
+
+	/* TODO - Check if we need a delay */
+	/* TODO - pcpu_metadata keeps a NULL ref */
+	while(gbl_nr_hw_events) {
+		kfree(gbl_hw_events[gbl_nr_hw_events--]);
+	}
 }
 
 u64 compute_hw_events_mask(pmc_evt_code *hw_events_codes, unsigned cnt)

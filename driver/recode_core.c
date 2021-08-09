@@ -196,25 +196,16 @@ void pmi_function(unsigned cpu)
 	struct pmcs_collection *pmcs_collection;
 	struct data_collector_sample *dc_sample = NULL;
 
-	// if (recode_state == OFF) {
-	// 	pr_warn("Recode is OFF - This PMI shouldn't fire, ignoring\n");
-	// 	return;
-	// }
+	if (recode_state == OFF) {
+		pr_warn("Recode is OFF - This PMI shouldn't fire, ignoring\n");
+		return;
+	}
 
-	// // TODO - it may require the active_pmis signals
-	// if (recode_state == IDLE) {
-	// 	pmc_generate_snapshot(&sample.pmcs, false);
-	// 	return;
-	// }
-
-	// if (atomic_read(&on_samples_flushing)) {
-	// 	pr_debug("Skipping pmi_function because on_samples_flushing\n");
-	// 	return;
-	// }
+	if (recode_state == IDLE) {
+		return;
+	}
 
 	atomic_inc(&active_pmis);
-
-	// pmc_generate_snapshot(&sample.pmcs, false);
 
 	pmcs_collection = get_pmcs_collection_on_this_cpu();
 
@@ -238,10 +229,20 @@ void pmi_function(unsigned cpu)
 		goto skip;
 	}
 
+	/* Compute TMAM */
+	/*
+	 * u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
+	 * compute_tma(dc_sample, mask); 
+	 */
+	// 
+
 	memcpy(dc_sample->pmcs.pmcs, pmcs_collection,
 	       sizeof(struct pmcs_collection) +
 		       (sizeof(pmc_ctr) * pmcs_collection->cnt));
 
+	dc_sample->id = current->pid;
+	dc_sample->tracked = true;
+	dc_sample->k_thread = !current->mm;
 
 	pr_debug("SAMPLE: ");
 	for (k = 0; k < pmcs_collection->cnt; ++k) {
@@ -250,90 +251,9 @@ void pmi_function(unsigned cpu)
 	pr_cont("\n");
 
 	put_write_dc_sample(per_cpu(pcpu_data_collector, cpu));
-	// write_log_sample(per_cpu(pcpu_data_logger, cpu), pmcs_collection);
-
-	// sample.id = current->pid;
-	// sample.tracked = true;
-	// sample.k_thread = !current->mm;
-	// write_log_sample(per_cpu(pcpu_data_logger, cpu), &sample);
 
 skip:
 	atomic_dec(&active_pmis);
-}
-
-void pmc_generate_snapshot(struct pmcs_snapshot *sample_pmcs, bool pmc_off)
-{
-	unsigned k;
-	pmc_ctr old_pmc_pmi, new_pmc_pmi;
-	unsigned cpu = get_cpu();
-	bool overflow = !pmc_off;
-	/* At this moment @new_pmcs refers to the last snapshot */
-	struct pmcs_snapshot *new_pmcs = per_cpu_ptr(&pcpu_pmcs_snapshot, cpu);
-
-	if (pmc_off)
-		disable_pmc_on_this_cpu(false);
-
-	if (sample_pmcs)
-		/* At this moment @sample_pmcs refers to the last snapshot */
-		memcpy(sample_pmcs, new_pmcs, sizeof(struct pmcs_snapshot));
-
-	/* Read current PMCs' value and place into @new_pmcs */
-	read_all_pmcs(new_pmcs);
-
-	if (sample_pmcs) {
-		old_pmc_pmi = sample_pmcs->fixed[gbl_fixed_pmc_pmi];
-		new_pmc_pmi = new_pmcs->fixed[gbl_fixed_pmc_pmi];
-
-		/* Compute the sample values and place into @sample_pmcs */
-		for_each_pmc (k, gbl_nr_pmc_fixed + gbl_nr_pmc_general) {
-			sample_pmcs->pmcs[k] = PMC_TRIM(new_pmcs->pmcs[k] -
-							sample_pmcs->pmcs[k]);
-		}
-
-		/* TSC is not computed and it is set to "this" moment */
-		sample_pmcs->tsc = new_pmcs->tsc;
-
-		/**
-		 * So far we have that
-		 * @new_pmcs 	: holds the last pmcs_snapshot (raw values)
-		 * @sample_pmcs : holds the last pmcs_sample (computed values)
-		 * @old_pmc_pmi : holds the old raw value for the pmc_pmi
-		 * @new_pmc_pmi : holds the new raw value for the pmc_pmi
-		 */
-
-		if (overflow) { // sample_pmcs->fixed[gbl_fixed_pmc_pmi] == 0
-			// new_pmc_pmi == 0x2c
-			/* We got no CTX switches in the meanwhile */
-			if (old_pmc_pmi < PMI_DELAY) {
-				sample_pmcs->fixed[gbl_fixed_pmc_pmi] =
-					PMC_TRIM(PMC_CTR_MAX -
-						 gbl_reset_period);
-			} else {
-				sample_pmcs->fixed[gbl_fixed_pmc_pmi] =
-					PMC_TRIM(PMC_CTR_MAX - old_pmc_pmi);
-			}
-		} else {
-			if (old_pmc_pmi < PMI_DELAY)
-				sample_pmcs->fixed[gbl_fixed_pmc_pmi] =
-					PMC_TRIM(new_pmc_pmi -
-						 gbl_reset_period);
-			else
-				sample_pmcs->fixed[gbl_fixed_pmc_pmi] =
-					PMC_TRIM(new_pmc_pmi - old_pmc_pmi);
-		}
-
-		// TODO - Delete or improve
-		if (cpu == 0) {
-			pr_debug("[CTX %u] OLD: %llx, NEW: %llx, DIFF %llx\n",
-				 pmc_off, old_pmc_pmi, new_pmc_pmi,
-				 sample_pmcs->fixed[gbl_fixed_pmc_pmi]);
-		}
-	}
-
-	if (pmc_off)
-		enable_pmc_on_this_cpu(false);
-
-	put_cpu();
 }
 
 static void manage_pmu_state(void *dummy)

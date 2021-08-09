@@ -30,6 +30,23 @@ void pmc_collect_partial_values(unsigned cpu, unsigned cnt, unsigned index)
 		pmcs_general(pmcs_collection->pmcs)[index++] =
 			READ_GENERAL_PMC(pmc);
 	}
+
+	per_cpu(pcpu_pmus_metadata.pmi_partial_cnt, cpu)++;
+}
+
+static void scale_pmcs_values(unsigned cpu)
+{
+	unsigned pmc;
+	unsigned scale = per_cpu(pcpu_pmus_metadata.pmi_partial_cnt, cpu);
+	struct pmcs_collection *pmcs_collection =
+		per_cpu(pcpu_pmus_metadata.pmcs_collection, cpu);
+
+	for_each_pmc (pmc, pmcs_collection->cnt) {
+		pmcs_collection->pmcs[pmc] *= scale;
+	}
+
+	pmcs_fixed(pmcs_collection->pmcs)[gbl_fixed_pmc_pmi] =
+		gbl_reset_period * scale;
 }
 
 /* Called with preemption off */
@@ -58,8 +75,11 @@ bool pmc_multiplexing_on_pmi(unsigned cpu)
 	if (gbl_nr_pmc_general >= req_hw_events) {
 		fast_setup_general_pmc_on_cpu(cpu, hw_events->cfgs, index,
 					      req_hw_events);
-		per_cpu(pcpu_pmus_metadata.hw_events_index, cpu) = 0;
 
+		scale_pmcs_values(cpu);
+
+		per_cpu(pcpu_pmus_metadata.hw_events_index, cpu) = 0;
+		per_cpu(pcpu_pmus_metadata.pmi_partial_cnt, cpu) = 0;
 		return true;
 	} else {
 		fast_setup_general_pmc_on_cpu(cpu, hw_events->cfgs, index,

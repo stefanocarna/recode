@@ -29,18 +29,19 @@ static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 
 	/* Nothing to do here */
 	if (!global) {
-		pr_info("[%u] Got PMI on vector %u - FIXED: %llx\n", 
-		cpu, gbl_fixed_pmc_pmi, (u64) READ_FIXED_PMC(gbl_fixed_pmc_pmi));
+		pr_info("[%u] Got PMI on vector %u - FIXED: %llx\n", cpu,
+			gbl_fixed_pmc_pmi,
+			(u64)READ_FIXED_PMC(gbl_fixed_pmc_pmi));
 		goto end;
 	}
 
 	/* This IRQ is not originated from PMC overflow */
-	if(!(global & (PERF_GLOBAL_CTRL_FIXED0_MASK << gbl_fixed_pmc_pmi)) &&
-	   !(global && PERF_COND_CHGD_IGNORE_MASK)) {
+	if (!(global & (PERF_GLOBAL_CTRL_FIXED0_MASK << gbl_fixed_pmc_pmi)) &&
+	    !(global && PERF_COND_CHGD_IGNORE_MASK)) {
 		pr_info("Something triggered PMI - GLOBAL: %llx\n", global);
 		goto no_pmi;
 	}
-	
+
 	/* 
 	 * The current implementation of this function does not
 	 * provide a sliding window for a discrete samples collection.
@@ -53,7 +54,8 @@ static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 
 	handled++;
 
-	WRITE_FIXED_PMC(gbl_fixed_pmc_pmi, gbl_reset_period);
+	WRITE_FIXED_PMC(gbl_fixed_pmc_pmi,
+			this_cpu_read(pcpu_pmus_metadata.pmi_reset_value));
 
 no_pmi:
 	if (recode_pmi_vector == NMI) {
@@ -67,7 +69,7 @@ no_pmi:
 end:
 	put_cpu();
 
-        return handled;
+	return handled;
 }
 
 static void pmi_lvt_setup_on_cpu(void *dummy)
@@ -86,9 +88,8 @@ static void pmi_lvt_cleanup_on_cpu(void *dummy)
 /* Setup the PMI's NMI handler */
 int pmi_nmi_setup(void)
 {
-
 	int err = 0;
-	
+
 	handler_na.handler = pmi_handler;
 	handler_na.name = NMI_NAME;
 	handler_na.flags = NMI_FLAG_FIRST;
