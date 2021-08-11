@@ -72,9 +72,18 @@ bool pmc_multiplexing_on_pmi(unsigned cpu)
 	pmc_collect_partial_values(cpu, hw_events->cnt, index);
 
 	/* enough pmcs for events */
+	pr_debug("req_events: %u\n", req_hw_events);
 	if (gbl_nr_pmc_general >= req_hw_events) {
 		fast_setup_general_pmc_on_cpu(cpu, hw_events->cfgs, index,
 					      req_hw_events);
+
+
+		unsigned pmc;
+		struct pmcs_collection *pmcs_collection = per_cpu(pcpu_pmus_metadata.pmcs_collection, cpu);
+		for_each_pmc (pmc, pmcs_collection->cnt) {
+			pr_debug("pmc %u: %llx\n", pmc, pmcs_collection->pmcs[pmc]);
+		}
+
 
 		scale_pmcs_values(cpu);
 

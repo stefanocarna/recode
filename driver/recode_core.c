@@ -20,6 +20,8 @@
 #include "recode_config.h"
 #include "recode_collector.h"
 
+#include "recode_tma_test.c"
+
 DEFINE_PER_CPU(struct pmcs_snapshot, pcpu_pmcs_snapshot) = { 0 };
 DEFINE_PER_CPU(bool, pcpu_last_ctx_snapshot) = false;
 
@@ -43,7 +45,7 @@ int recode_data_init(void)
 	return 0;
 mem_err:
 	pr_info("failed to allocate percpu pcpu_pmc_buffer\n");
-	
+
 	while(--cpu)
 		fini_collector(cpu);
 
@@ -232,9 +234,18 @@ void pmi_function(unsigned cpu)
 	/* Compute TMAM */
 	/*
 	 * u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
-	 * compute_tma(dc_sample, mask); 
+	 * compute_tma(dc_sample, mask);
 	 */
-	// 
+
+	 u64 metrics[] = {L0_BS_TEST, L0_FB_TEST};
+	 u32 metrics_size = 2;
+	 u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
+	 check_tma(metrics_size, metrics, mask);
+	 compute_tma(pmcs_collection, mask);
+
+	 //pr_debug("aaaa\n");
+
+	//
 
 	memcpy(dc_sample->pmcs.pmcs, pmcs_collection,
 	       sizeof(struct pmcs_collection) +
