@@ -67,6 +67,8 @@ extern pmc_evt_code HW_EVENTS_BITS[];
 
 #define pmcs_fixed(pmcs) (pmcs)
 #define pmcs_general(pmcs) (pmcs + gbl_nr_pmc_fixed)
+#define nr_pmcs_general(cnt) (cnt - gbl_nr_pmc_fixed)
+
 #define perf_evt_sel_to_code(x) (x & (BIT(16) - 1))
 
 void enable_pmc_on_this_cpu(bool force);

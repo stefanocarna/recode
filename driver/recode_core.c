@@ -246,7 +246,7 @@ void pmi_function(unsigned cpu)
 
 	pr_debug("SAMPLE: ");
 	for (k = 0; k < pmcs_collection->cnt; ++k) {
-		pr_cont("%llx ", pmcs_collection->pmcs[k]);
+		pr_cont("%llu ", pmcs_collection->pmcs[k]);
 	}
 	pr_cont("\n");
 

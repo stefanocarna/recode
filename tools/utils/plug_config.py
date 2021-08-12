@@ -70,8 +70,7 @@ def action_frequency(value):
         pr_warn("frequency must be expressed as (1 << P) + 1")
         return
 
-    pmc_mask = (1 << 48) - 1
-    pmc_mask -= (1 << (value * 1)) - 1
+    pmc_mask = (1 << value) - 1
 
     path = RECODE_PROC_PATH + "/frequency"
 

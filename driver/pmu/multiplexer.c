@@ -1,13 +1,15 @@
 #include "multiplexer.h"
 
-void pmc_collect_partial_values(unsigned cpu, unsigned cnt, unsigned index)
+void pmc_collect_partial_values(unsigned cpu, unsigned gp_cnt, unsigned index)
 {
 	unsigned pmc;
+	pmc_ctr value;
 	u64 ctrl = per_cpu(pcpu_pmus_metadata.perf_global_ctrl, cpu);
 	struct pmcs_collection *pmcs_collection =
-		per_cpu(pcpu_pmus_metadata.pmcs_collection, cpu);
+	    per_cpu(pcpu_pmus_metadata.pmcs_collection, cpu);
 
-	if (unlikely(!pmcs_collection)) {
+	if (unlikely(!pmcs_collection))
+	{
 		pr_debug("pmcs_collection is null\n");
 		return;
 	}
@@ -16,37 +18,36 @@ void pmc_collect_partial_values(unsigned cpu, unsigned cnt, unsigned index)
 		pmcs_collection->complete = false;
 
 	/* Collect fixed values only at the end of the multiplexing period */
-	// TODO - Fixed required adjustment (OLD = NEW - OLD)
-	if ((cnt - index) <= gbl_nr_pmc_general) {
-		for_each_active_fixed_pmc (ctrl, pmc) {
+	if ((gp_cnt - index) <= gbl_nr_pmc_general)
+	{
+		for_each_active_fixed_pmc(ctrl, pmc)
+		{
+			/* NEW value */
+			value = READ_FIXED_PMC(pmc);
+			/* Compute current sample value */
 			pmcs_fixed(pmcs_collection->pmcs)[pmc] =
-				READ_FIXED_PMC(pmc);
+			    value -
+			    this_cpu_read(
+				pcpu_pmus_metadata.pmcs_fixed)[pmc];
+			/* Update OLD Value */
+			this_cpu_read(pcpu_pmus_metadata.pmcs_fixed)[pmc] =
+			    value;
 		}
-		pmcs_collection->cnt = gbl_nr_pmc_fixed + cnt;
+
+		pmcs_collection->cnt = gbl_nr_pmc_fixed + gp_cnt;
 		pmcs_collection->complete = true;
+
+		pmcs_fixed(pmcs_collection->pmcs)[gbl_fixed_pmc_pmi] =
+		    gbl_reset_period;
 	}
 
-	for_each_active_general_pmc (ctrl, pmc) {
+	for_each_active_general_pmc(ctrl, pmc)
+	{
 		pmcs_general(pmcs_collection->pmcs)[index++] =
-			READ_GENERAL_PMC(pmc);
+		    READ_GENERAL_PMC(pmc);
 	}
 
 	per_cpu(pcpu_pmus_metadata.pmi_partial_cnt, cpu)++;
-}
-
-static void scale_pmcs_values(unsigned cpu)
-{
-	unsigned pmc;
-	unsigned scale = per_cpu(pcpu_pmus_metadata.pmi_partial_cnt, cpu);
-	struct pmcs_collection *pmcs_collection =
-		per_cpu(pcpu_pmus_metadata.pmcs_collection, cpu);
-
-	for_each_pmc (pmc, pmcs_collection->cnt) {
-		pmcs_collection->pmcs[pmc] *= scale;
-	}
-
-	pmcs_fixed(pmcs_collection->pmcs)[gbl_fixed_pmc_pmi] =
-		gbl_reset_period * scale;
 }
 
 /* Called with preemption off */
@@ -55,9 +56,10 @@ bool pmc_multiplexing_on_pmi(unsigned cpu)
 	unsigned index = per_cpu(pcpu_pmus_metadata.hw_events_index, cpu);
 
 	struct hw_events *hw_events =
-		per_cpu(pcpu_pmus_metadata.hw_events, cpu);
+	    per_cpu(pcpu_pmus_metadata.hw_events, cpu);
 
-	if (!hw_events) {
+	if (!hw_events)
+	{
 		pr_warn("Processing pmi on cpu %u without hw_events\n", cpu);
 		return false;
 	}
@@ -76,7 +78,20 @@ bool pmc_multiplexing_on_pmi(unsigned cpu)
 		fast_setup_general_pmc_on_cpu(cpu, hw_events->cfgs, index,
 					      req_hw_events);
 
-		scale_pmcs_values(cpu);
+		unsigned pmc;
+		unsigned scale =
+			per_cpu(pcpu_pmus_metadata.pmi_partial_cnt, cpu);
+		struct pmcs_collection *pmcs_collection =
+			per_cpu(pcpu_pmus_metadata.pmcs_collection, cpu);
+
+		for_each_pmc (pmc, nr_pmcs_general(pmcs_collection->cnt)) {
+			pmcs_general(pmcs_collection->pmcs)[pmc] *= scale;
+		}
+
+		for_each_pmc (pmc, pmcs_collection->cnt) {
+			pr_debug("pmc %u: %llx\n", pmc,
+				 pmcs_collection->pmcs[pmc]);
+		}
 
 		per_cpu(pcpu_pmus_metadata.hw_events_index, cpu) = 0;
 		per_cpu(pcpu_pmus_metadata.pmi_partial_cnt, cpu) = 0;

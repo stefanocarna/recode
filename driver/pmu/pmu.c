@@ -55,7 +55,7 @@ unsigned __read_mostly gbl_nr_pmc_fixed = 0;
 unsigned __read_mostly gbl_nr_pmc_general = 0;
 
 unsigned __read_mostly gbl_nr_hw_events = 0;
-struct hw_events * __read_mostly gbl_hw_events[MAX_HW_EVENTS] = { 0 };
+struct hw_events *__read_mostly gbl_hw_events[MAX_HW_EVENTS] = { 0 };
 
 void get_machine_configuration(void)
 {
@@ -93,7 +93,6 @@ void fast_setup_general_pmc_on_cpu(unsigned cpu, struct pmc_evt_sel *pmc_cfgs,
 		cnt = gbl_nr_pmc_general;
 
 	ctrl = FIXED_TO_BITS_MASK | (BIT_ULL(cnt) - 1);
-
 
 	/* Uneeded PMCs are disabled in ctrl */
 	for_each_active_general_pmc (ctrl, pmc) {
@@ -218,7 +217,7 @@ static void flush_and_clean_hw_events(void)
 void setup_hw_events_on_cpu(void *hw_events)
 {
 	bool state;
-	unsigned cnt;
+	unsigned cnt, pmc;
 	pmc_ctr reset_period;
 	struct pmcs_collection *pmcs_collection;
 
@@ -284,6 +283,9 @@ skip_alloc:
 				      ((struct hw_events *)hw_events)->cfgs, 0,
 				      cnt);
 
+	for_each_fixed_pmc (pmc)
+		WRITE_FIXED_PMC(pmc, 0);
+
 	WRITE_FIXED_PMC(gbl_fixed_pmc_pmi,
 			this_cpu_read(pcpu_pmus_metadata.pmi_reset_value));
 
@@ -314,7 +316,8 @@ int setup_hw_events_on_system(pmc_evt_code *hw_events_codes, unsigned cnt)
 	/* Check if the mask is already registered */
 	for (i = 0; i < gbl_nr_hw_events; ++i) {
 		if (gbl_hw_events[i]->mask == mask) {
-			pr_debug("Mask %llx is already used. Just setup\n", mask);
+			pr_debug("Mask %llx is already used. Just setup\n",
+				 mask);
 			hw_events = gbl_hw_events[i];
 			goto setup_done;
 		}
@@ -357,7 +360,7 @@ setup_done:
 	return 0;
 }
 
-static void __init_pmu_on_cpu(void *dummy)
+static void __init_pmu_on_cpu(void *pmcs_fixed)
 {
 #ifndef CONFIG_RUNNING_ON_VM
 	u64 msr;
@@ -378,7 +381,7 @@ static void __init_pmu_on_cpu(void *dummy)
 
 	for_each_fixed_pmc (pmc) {
 		if (pmc == gbl_fixed_pmc_pmi) {
-			WRITE_FIXED_PMC(pmc, gbl_reset_period);
+			WRITE_FIXED_PMC(pmc, PMC_TRIM(~gbl_reset_period));
 		} else {
 			WRITE_FIXED_PMC(pmc, 0ULL);
 		}
@@ -388,9 +391,9 @@ static void __init_pmu_on_cpu(void *dummy)
 	wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL,
 	       this_cpu_read(pcpu_pmus_metadata.fixed_ctrl));
 
-	/* TODO - Make it compliant to pcpu_pmus_metadata.fixed_ctrl */
-	this_cpu_write(pcpu_pmus_metadata.perf_global_ctrl, FIXED_TO_BITS_MASK);
-
+	/* Assign the memoery for the fixed PMCs snapshot */
+	this_cpu_write(pcpu_pmus_metadata.pmcs_fixed,
+		       pmcs_fixed + (smp_processor_id() * gbl_nr_pmc_fixed));
 #else
 	pr_warn("CONFIG_RUNNING_ON_VM is enabled. PMCs are ignored\n");
 #endif
@@ -400,7 +403,19 @@ int init_pmu_on_system(void)
 {
 	unsigned cpu, pmc;
 	u64 gbl_fixed_ctrl = 0;
+	pmc_ctr *pmcs_fixed;
 	/* Compute fixed_ctrl */
+
+	pr_debug("num_possible_cpus: %u\n", num_possible_cpus());
+
+	/* TODO Free this memory */
+	pmcs_fixed = kzalloc(sizeof(pmc_ctr) * num_possible_cpus() *
+				     gbl_nr_pmc_fixed,
+			     GFP_KERNEL);
+	if (!pmcs_fixed) {
+		pr_warn("Cannot allocate memory in init_pmu_on_system\n");
+		return -ENOMEM;
+	}
 
 	for_each_fixed_pmc (pmc) {
 		/**
@@ -423,7 +438,7 @@ int init_pmu_on_system(void)
 	}
 
 	/* Metadata doesn't require initialization at the moment */
-	on_each_cpu(__init_pmu_on_cpu, NULL, 1);
+	on_each_cpu(__init_pmu_on_cpu, pmcs_fixed, 1);
 
 	pr_warn("PMUs initialized on all cores\n");
 	return 0;
@@ -436,7 +451,7 @@ void cleanup_pmc_on_system(void)
 
 	/* TODO - Check if we need a delay */
 	/* TODO - pcpu_metadata keeps a NULL ref */
-	while(gbl_nr_hw_events) {
+	while (gbl_nr_hw_events) {
 		kfree(gbl_hw_events[gbl_nr_hw_events--]);
 	}
 }
