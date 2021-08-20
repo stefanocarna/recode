@@ -8,6 +8,9 @@
 extern u64 __read_mostly gbl_reset_period;
 extern unsigned __read_mostly gbl_fixed_pmc_pmi;
 
+//	update this when modifying HW_EVENTS_BIT
+#define HW_EVENTS_NUMBER (14)
+
 #define MSR_CORE_PERF_GENERAL_CTR0 MSR_IA32_PERFCTR0
 #define MSR_CORE_PERFEVTSEL_ADDRESS0 MSR_P6_EVNTSEL0
 
@@ -80,6 +83,8 @@ void disable_pmc_on_system(void);
 struct pmcs_collection *get_pmcs_collection_on_this_cpu(void);
 
 void get_machine_configuration(void);
+
+void setup_hw_events_on_cpu(void *hw_events);
 
 int setup_hw_events_on_system(pmc_evt_code *hw_events_codes, unsigned cnt);
 

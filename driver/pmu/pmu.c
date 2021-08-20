@@ -8,24 +8,30 @@
 #include "pmu/pmu.h"
 #include "pmu/pmi.h"
 #include "pmu/pmc_events.h"
+#include "recode_tma.h"
 
-pmc_evt_code HW_EVENTS_BITS[] = { { evt_ca_stalls_mem_any },
-				  { evt_ca_stalls_total },
+
+pmc_evt_code HW_EVENTS_BITS[] = { { evt_im_recovery_cycles },
+					{ evt_ui_any },
+					{ evt_iund_core },
+					{ evt_ur_retire_slots },
+					{ evt_ca_stalls_mem_any },
+					{ evt_ea_bound_on_stores },
+					{ evt_ea_exe_bound_0_ports },
+					{ evt_ea_1_ports_util },
 				  { evt_ca_stalls_l3_miss },
 				  { evt_ca_stalls_l2_miss },
 				  { evt_ca_stalls_l1d_miss },
-				  { evt_ea_exe_bound_0_ports },
-				  { evt_ea_1_ports_util },
+					{ evt_l2_hit },
+					{ evt_l1_pend_miss },
+					/*
+					//	not used
+				  { evt_ca_stalls_total },
 				  { evt_ea_2_ports_util },
 				  { evt_ea_3_ports_util },
 				  { evt_ea_4_ports_util },
-				  { evt_ea_bound_on_stores },
 				  { evt_rse_empty_cycles },
-				  { evt_ur_retire_slots },
 				  { evt_cpu_clk_unhalted },
-				  { evt_ui_any },
-				  { evt_im_recovery_cycles },
-				  { evt_iund_core },
 				  { stlb_miss_loads },
 				  { tlb_page_walk },
 				  { evt_loads_all },
@@ -47,6 +53,7 @@ pmc_evt_code HW_EVENTS_BITS[] = { { evt_ca_stalls_mem_any },
 				  { evt_l2_out_silent },
 				  { evt_l2_out_non_silent },
 				  { evt_l2_out_useless },
+					*/
 				  { evt_null } };
 
 DEFINE_PER_CPU(struct pmus_metadata, pcpu_pmus_metadata) = { 0 };
@@ -96,6 +103,7 @@ void fast_setup_general_pmc_on_cpu(unsigned cpu, struct pmc_evt_sel *pmc_cfgs,
 
 	/* Uneeded PMCs are disabled in ctrl */
 	for_each_active_general_pmc (ctrl, pmc) {
+		pr_debug("pmc_num %u, pmc_cfgs: %llx\n", pmc, pmc_cfgs[pmc + off].perf_evt_sel);
 		SETUP_GENERAL_PMC(pmc, pmc_cfgs[pmc + off].perf_evt_sel);
 		WRITE_GENERAL_PMC(pmc, 0ULL);
 	}
@@ -105,6 +113,8 @@ void fast_setup_general_pmc_on_cpu(unsigned cpu, struct pmc_evt_sel *pmc_cfgs,
 
 static void __enable_pmc_on_cpu(void *dummy)
 {
+	if (smp_processor_id()!=1)
+		return;
 	if (recode_state == OFF) {
 		pr_warn("Cannot enable pmc on cpu %u while Recode is OFF\n",
 			smp_processor_id());
@@ -264,6 +274,9 @@ skip_alloc:
 	/* Update hw_events */
 	this_cpu_write(pcpu_pmus_metadata.hw_events_index, 0);
 	this_cpu_write(pcpu_pmus_metadata.hw_events, hw_events);
+
+	/* Update pmc index array */
+	update_index_array(hw_events);
 
 	if (cnt <= gbl_nr_pmc_general) {
 		reset_period = gbl_reset_period;

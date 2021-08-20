@@ -93,6 +93,7 @@ bool pmc_multiplexing_on_pmi(unsigned cpu)
 				 pmcs_collection->pmcs[pmc]);
 		}
 
+
 		per_cpu(pcpu_pmus_metadata.hw_events_index, cpu) = 0;
 		per_cpu(pcpu_pmus_metadata.pmi_partial_cnt, cpu) = 0;
 		return true;

@@ -1,9 +1,9 @@
 #ifndef _PMC_EVENTS_H
 #define _PMC_EVENTS_H
 
-/** 
+/**
  * From Intel Vol 3B - 18.2.1.1
- * 
+ *
  * INV (invert) flag (bit 23) — When set, inverts the counter-mask (CMASK)
  * comparison, so that both greater than or equal to and less than comparisons
  * can be made (0: greater than or equal; 1: less than). Note if counter-mask
@@ -66,17 +66,17 @@
 #define evt_llc_misses			evt_umask_cmask(0x2e, 0x41, 0)
 
 #define evt_l3_miss_data		evt_umask_cmask(0xb0, 0x10, 0)
-
+/*
 #define evt_ca_stalls_mem_any		evt_umask_cmask(0xa3, 0x10, 16)
 #define evt_ca_stalls_total		evt_umask_cmask(0xa3, 0x04, 4)
 #define evt_ca_stalls_l3_miss		evt_umask_cmask(0xa3, 0x06, 6)
 #define evt_ca_stalls_l2_miss		evt_umask_cmask(0xa3, 0x05, 5)
 #define evt_ca_stalls_l1d_miss		evt_umask_cmask(0xa3, 0x0c, 12)
-#define evt_ea_bound_on_stores		evt_umask_cmask(0xa6, 0x40, 0)
+#define evt_ea_bound_on_stores		evt_umask_cmask(0xa6, 0x40, 0)*/
 
 /* L2 Events */
 #define evt_l2_reference		evt_umask_cmask(0x24, 0xef, 0)	// Undercounts
-#define evt_l2_misses			evt_umask_cmask(0x24, 0x3f, 0)	
+#define evt_l2_misses			evt_umask_cmask(0x24, 0x3f, 0)
 
 #define evt_l2_all_rfo			evt_umask_cmask(0x24, 0xe2, 0)
 #define evt_l2_rfo_misses		evt_umask_cmask(0x24, 0x22, 0)
@@ -99,5 +99,8 @@
 #define evt_l2_out_silent		evt_umask_cmask(0xf2, 0x01, 0)
 #define evt_l2_out_non_silent		evt_umask_cmask(0xf2, 0x02, 0)
 #define evt_l2_out_useless		evt_umask_cmask(0xf2, 0x04, 0)
+
+/* add */
+#define evt_l1_pend_miss  evt_umask_cmask(0x48, 0x02, 0)
 
 #endif /* _PMC_EVENTS_H */

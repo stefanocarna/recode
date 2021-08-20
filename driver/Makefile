@@ -16,7 +16,7 @@ $(MODULE_NAME)-y := recode_config.o
 $(MODULE_NAME)-y += recode_core.o
 $(MODULE_NAME)-y += recode_collector.o
 $(MODULE_NAME)-y += recode_module.o
-# $(MODULE_NAME)-y += recode_tma.o
+$(MODULE_NAME)-y += recode_tma.o
 
 DEVICE_DIR 	:= device
 DEVICE_SOURCES 	:= $(wildcard $(DEVICE_DIR)/*.c)
