@@ -10,21 +10,20 @@
 #include "pmu/pmc_events.h"
 #include "recode_tma.h"
 
-
 pmc_evt_code HW_EVENTS_BITS[] = { { evt_im_recovery_cycles },
-					{ evt_ui_any },
-					{ evt_iund_core },
-					{ evt_ur_retire_slots },
-					{ evt_ca_stalls_mem_any },
-					{ evt_ea_bound_on_stores },
-					{ evt_ea_exe_bound_0_ports },
-					{ evt_ea_1_ports_util },
+				  { evt_ui_any },
+				  { evt_iund_core },
+				  { evt_ur_retire_slots },
+				  { evt_ca_stalls_mem_any },
+				  { evt_ea_bound_on_stores },
+				  { evt_ea_exe_bound_0_ports },
+				  { evt_ea_1_ports_util },
 				  { evt_ca_stalls_l3_miss },
 				  { evt_ca_stalls_l2_miss },
 				  { evt_ca_stalls_l1d_miss },
-					{ evt_l2_hit },
-					{ evt_l1_pend_miss },
-					/*
+				  { evt_l2_hit },
+				  { evt_l1_pend_miss },
+				  /*
 					//	not used
 				  { evt_ca_stalls_total },
 				  { evt_ea_2_ports_util },
@@ -103,7 +102,7 @@ void fast_setup_general_pmc_on_cpu(unsigned cpu, struct pmc_evt_sel *pmc_cfgs,
 
 	/* Uneeded PMCs are disabled in ctrl */
 	for_each_active_general_pmc (ctrl, pmc) {
-		pr_debug("pmc_num %u, pmc_cfgs: %llx\n", pmc, pmc_cfgs[pmc + off].perf_evt_sel);
+		// pr_debug("pmc_num %u, pmc_cfgs: %llx\n", pmc, pmc_cfgs[pmc + off].perf_evt_sel);
 		SETUP_GENERAL_PMC(pmc, pmc_cfgs[pmc + off].perf_evt_sel);
 		WRITE_GENERAL_PMC(pmc, 0ULL);
 	}
@@ -113,7 +112,7 @@ void fast_setup_general_pmc_on_cpu(unsigned cpu, struct pmc_evt_sel *pmc_cfgs,
 
 static void __enable_pmc_on_cpu(void *dummy)
 {
-	if (smp_processor_id()!=1)
+	if (smp_processor_id() != 1)
 		return;
 	if (recode_state == OFF) {
 		pr_warn("Cannot enable pmc on cpu %u while Recode is OFF\n",
@@ -227,7 +226,7 @@ static void flush_and_clean_hw_events(void)
 void setup_hw_events_on_cpu(void *hw_events)
 {
 	bool state;
-	unsigned cnt, pmc;
+	unsigned hw_cnt, pmcs_cnt, pmc;
 	pmc_ctr reset_period;
 	struct pmcs_collection *pmcs_collection;
 
@@ -241,21 +240,21 @@ void setup_hw_events_on_cpu(void *hw_events)
 		goto end;
 	}
 
-	cnt = ((struct hw_events *)hw_events)->cnt;
+	hw_cnt = ((struct hw_events *)hw_events)->cnt;
+	pmcs_cnt = hw_cnt + gbl_nr_pmc_fixed;
 
 	pmcs_collection = this_cpu_read(pcpu_pmus_metadata.pmcs_collection);
 
 	/* Free old values */
-	if (pmcs_collection && pmcs_collection->cnt >= cnt)
+	if (pmcs_collection && pmcs_collection->cnt >= pmcs_cnt)
 		goto skip_alloc;
 
 	if (pmcs_collection)
 		kfree(pmcs_collection);
 
-	pmcs_collection =
-		kzalloc(sizeof(struct pmcs_collection) +
-				(sizeof(pmc_ctr) * (cnt + gbl_nr_pmc_fixed)),
-			GFP_KERNEL);
+	pmcs_collection = kzalloc(sizeof(struct pmcs_collection) +
+					  (sizeof(pmc_ctr) * pmcs_cnt),
+				  GFP_KERNEL);
 
 	if (!pmcs_collection) {
 		pr_warn("Cannot allocate memory for pmcs_collection on cpu %u\n",
@@ -264,7 +263,7 @@ void setup_hw_events_on_cpu(void *hw_events)
 	}
 
 	pmcs_collection->complete = false;
-	pmcs_collection->cnt = cnt + gbl_nr_pmc_fixed;
+	pmcs_collection->cnt = pmcs_cnt;
 	pmcs_collection->mask = ((struct hw_events *)hw_events)->mask;
 
 	/* Update the new pmcs_collection value */
@@ -272,17 +271,18 @@ void setup_hw_events_on_cpu(void *hw_events)
 
 skip_alloc:
 	/* Update hw_events */
+	this_cpu_write(pcpu_pmus_metadata.pmi_partial_cnt, 0);
 	this_cpu_write(pcpu_pmus_metadata.hw_events_index, 0);
 	this_cpu_write(pcpu_pmus_metadata.hw_events, hw_events);
 
 	/* Update pmc index array */
 	update_index_array(hw_events);
 
-	if (cnt <= gbl_nr_pmc_general) {
+	if (hw_cnt <= gbl_nr_pmc_general) {
 		reset_period = gbl_reset_period;
 	} else {
 		reset_period =
-			gbl_reset_period / ((cnt / gbl_nr_pmc_general) + 1);
+			gbl_reset_period / ((hw_cnt / gbl_nr_pmc_general) + 1);
 	}
 
 	reset_period = PMC_TRIM(~reset_period);
@@ -290,11 +290,11 @@ skip_alloc:
 	this_cpu_write(pcpu_pmus_metadata.pmi_reset_value, reset_period);
 	pr_debug("[%u] Reset period set: %llx - Multiplexing time: %u\n",
 		 smp_processor_id(), reset_period,
-		 (cnt / gbl_nr_pmc_general) + 1);
+		 (hw_cnt / gbl_nr_pmc_general) + 1);
 
 	fast_setup_general_pmc_on_cpu(smp_processor_id(),
 				      ((struct hw_events *)hw_events)->cfgs, 0,
-				      cnt);
+				      hw_cnt);
 
 	for_each_fixed_pmc (pmc)
 		WRITE_FIXED_PMC(pmc, 0);
@@ -490,4 +490,25 @@ u64 compute_hw_events_mask(pmc_evt_code *hw_events_codes, unsigned cnt)
 	}
 
 	return mask;
+}
+
+void update_reset_period_on_system(u64 reset_period)
+{
+	unsigned cpu;
+	struct hw_events *hw_events;
+
+	disable_pmc_on_system();
+
+	gbl_reset_period = reset_period;
+
+	for_each_online_cpu (cpu) {
+		hw_events = per_cpu(pcpu_pmus_metadata.hw_events, cpu);
+		if (hw_events)
+			smp_call_function_single(cpu, setup_hw_events_on_cpu,
+						 hw_events, 1);
+	}
+
+	pr_info("Updated gbl_reset_period to %llx\n", reset_period);
+
+	enable_pmc_on_system();
 }

@@ -101,4 +101,6 @@ void debug_pmu_state(void);
 
 u64 compute_hw_events_mask(pmc_evt_code *hw_events_codes, unsigned cnt);
 
+void update_reset_period_on_system(u64 reset_period);
+
 #endif /* _PMU_H */

@@ -33,7 +33,7 @@ static ssize_t frequency_write(struct file *filp,
 
 	sscanf(buffer, "%llx", &val);
 
-	gbl_reset_period = val;
+	update_reset_period_on_system(val);
 
 	return count;
 }
