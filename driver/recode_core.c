@@ -253,7 +253,11 @@ void pmi_function(unsigned cpu)
 	dc_sample->k_thread = !current->mm;
 
 	pr_debug("SAMPLE: ");
-	for (k = 0; k < pmcs_collection->cnt; ++k) {
+	for (k = 0; k < gbl_nr_pmc_fixed; ++k) {
+		pr_cont("%llu ", pmcs_collection->pmcs[k]);
+	}
+	pr_cont(" - ");
+	for (k = gbl_nr_pmc_fixed; k < pmcs_collection->cnt; ++k) {
 		pr_cont("%llu ", pmcs_collection->pmcs[k]);
 	}
 	pr_cont("\n");
