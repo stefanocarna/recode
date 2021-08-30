@@ -1,6 +1,10 @@
 #ifndef _PMC_EVENTS_H
 #define _PMC_EVENTS_H
 
+#define evt_fix_inst_retired		0
+#define evt_fix_clock_cycles		1
+#define evt_fix_clock_cycles_tsc	2
+
 /**
  * From Intel Vol 3B - 18.2.1.1
  *
@@ -17,7 +21,7 @@
 
 /* Start HW_EVENTS definition */
 
-#define evt_ca_stalls_mem_any		evt_umask_cmask(0xa3, 0x10, 16)
+#define evt_ca_stalls_mem_any		evt_umask_cmask(0xa3, 0x14, 20)
 #define evt_ca_stalls_total		evt_umask_cmask(0xa3, 0x04, 4)
 #define evt_ca_stalls_l3_miss		evt_umask_cmask(0xa3, 0x06, 6)
 #define evt_ca_stalls_l2_miss		evt_umask_cmask(0xa3, 0x05, 5)

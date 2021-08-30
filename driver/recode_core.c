@@ -45,7 +45,7 @@ int recode_data_init(void)
 mem_err:
 	pr_info("failed to allocate percpu pcpu_pmc_buffer\n");
 
-	while(--cpu)
+	while (--cpu)
 		fini_collector(cpu);
 
 	return -1;
@@ -85,14 +85,7 @@ int recode_pmc_init(void)
 
 	disable_pmc_on_system();
 
-	/* Init hw events */
-	pmc_evt_code tma_code_l0[4] = {{0x00019c}, {0x0002c2}, {0x00010e}, {0x00010d}};
-	pmc_evt_code tma_code_l1[8] = {{0x00019c}, {0x0002c2}, {0x00010e}, {0x00010d}, {0x0001a6}, {0x0002a6}, {0x100010a3}, {0x0040a6}};
-	pmc_evt_code tma_code_l2[6] = {{0x100010a3}, {0x0c000ca3}, {0x050005a3}, {0x060006a3}, {0x0002d1}, {0x000248}};
-
-	setup_hw_events_on_system(tma_code_l0, 4);
-	setup_hw_events_on_system(tma_code_l1, 8);
-	setup_hw_events_on_system(tma_code_l2, 6);
+	recode_tma_init();
 
 	on_each_cpu(setup_hw_events_on_cpu, gbl_hw_events[0], 1);
 
@@ -241,9 +234,6 @@ void pmi_function(unsigned cpu)
 		goto skip;
 	}
 
-
-
-
 	memcpy(dc_sample->pmcs.pmcs, pmcs_collection,
 	       sizeof(struct pmcs_collection) +
 		       (sizeof(pmc_ctr) * pmcs_collection->cnt));
@@ -262,24 +252,21 @@ void pmi_function(unsigned cpu)
 	}
 	pr_cont("\n");
 
-
 	/* Compute TMAM */
 	/*
 	 * u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
 	 * compute_tma(dc_sample, mask);
 	 */
 
-	 //u64 metrics[] = {L0_BS, L0_FB};
-	 //u32 metrics_size = 2;
-	 u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
-	 //check_tma(metrics_size, metrics, mask);
-	 compute_tma(pmcs_collection, mask, cpu);
+	//u64 metrics[] = {L0_BS, L0_FB};
+	//u32 metrics_size = 2;
+	u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
+	//check_tma(metrics_size, metrics, mask);
+	compute_tma(pmcs_collection, mask, cpu);
 
-	 //pr_debug("aaaa\n");
+	//pr_debug("aaaa\n");
 
 	//
-
-
 
 	put_write_dc_sample(per_cpu(pcpu_data_collector, cpu));
 

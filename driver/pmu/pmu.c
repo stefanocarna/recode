@@ -276,7 +276,7 @@ skip_alloc:
 	this_cpu_write(pcpu_pmus_metadata.hw_events, hw_events);
 
 	/* Update pmc index array */
-	update_index_array(hw_events);
+	update_events_index_on_this_cpu(hw_events);
 
 	if (hw_cnt <= gbl_nr_pmc_general) {
 		reset_period = gbl_reset_period;
