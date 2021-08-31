@@ -117,8 +117,10 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 	(SFACT -                                                               \
 	 (tma_eval_l0_fb(pmcs) + tma_eval_l0_bs(pmcs) + tma_eval_l0_re(pmcs)))
 
-
-#define tma_eval_l1_mid_fuet(pmcs) (EVT_IDX(pmcs, ea_2_ports_util) * (EVT_IDX(pmcs, ur_retire_slots) / (pmcs[evt_fix_clock_cycles] + 1)) / (TMA_PIPELINE_WIDTH + 1))
+#define tma_eval_l1_mid_fuet(pmcs)                                             \
+	(EVT_IDX(pmcs, ea_2_ports_util) *                                      \
+	 (EVT_IDX(pmcs, ur_retire_slots) / (pmcs[evt_fix_clock_cycles] + 1)) / \
+	 (TMA_PIPELINE_WIDTH + 1))
 
 #define tma_eval_l1_mid_cbc(pmcs)                                              \
 	(EVT_IDX(pmcs, ea_exe_bound_0_ports) +                                 \
@@ -171,6 +173,7 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 	(EVT_IDX(pmcs, ea_bound_on_stores) / (pmcs[evt_fix_clock_cycles] + 1))
 
 #define computable_tma(tma, mask) ((tma & mask) == tma)
+#define tma_events_size(evts) (sizeof(evts) / sizeof(evts[0]))
 
 pmc_evt_code TMA_HW_EVTS_LEVEL_0[4] = { { TMA_EVT(iund_core) },
 					{ TMA_EVT(ur_retire_slots) },
@@ -185,8 +188,7 @@ pmc_evt_code TMA_HW_EVTS_LEVEL_1[9] = { { TMA_EVT(iund_core) },
 					{ TMA_EVT(ea_bound_on_stores) },
 					{ TMA_EVT(ea_1_ports_util) },
 					{ TMA_EVT(ea_2_ports_util) },
-					{ TMA_EVT(ca_stalls_mem_any) }
-					 };
+					{ TMA_EVT(ca_stalls_mem_any) } };
 
 pmc_evt_code TMA_HW_EVTS_LEVEL_2[6] = { { TMA_EVT(ca_stalls_mem_any) },
 					{ TMA_EVT(ca_stalls_l1d_miss) },
@@ -210,20 +212,20 @@ int recode_tma_init(void)
 {
 	unsigned k;
 
-	gbl_tma_levels[0].hw_cnt = 4;
 	gbl_tma_levels[0].hw_evts = TMA_HW_EVTS_LEVEL_0;
+	gbl_tma_levels[0].hw_cnt = tma_events_size(TMA_HW_EVTS_LEVEL_0);
 	gbl_tma_levels[0].next = &gbl_tma_levels[1];
 	gbl_tma_levels[0].prev = &gbl_tma_levels[0];
 	gbl_tma_levels[0].threshold = 100;
 
-	gbl_tma_levels[1].hw_cnt = 8;
 	gbl_tma_levels[1].hw_evts = TMA_HW_EVTS_LEVEL_1;
+	gbl_tma_levels[1].hw_cnt = tma_events_size(TMA_HW_EVTS_LEVEL_1);
 	gbl_tma_levels[1].next = &gbl_tma_levels[2];
 	gbl_tma_levels[1].prev = &gbl_tma_levels[0];
 	gbl_tma_levels[1].threshold = 100;
 
-	gbl_tma_levels[2].hw_cnt = 6;
 	gbl_tma_levels[2].hw_evts = TMA_HW_EVTS_LEVEL_2;
+	gbl_tma_levels[2].hw_cnt = tma_events_size(TMA_HW_EVTS_LEVEL_2);
 	gbl_tma_levels[2].next = &gbl_tma_levels[2];
 	gbl_tma_levels[2].prev = &gbl_tma_levels[1];
 	gbl_tma_levels[2].threshold = 100;
