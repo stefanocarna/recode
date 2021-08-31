@@ -25,13 +25,24 @@ unsigned pmc_collect_partial_values(unsigned cpu, unsigned gp_cnt,
 			/* NEW value */
 			value = READ_FIXED_PMC(pmc);
 			/* Compute current sample value */
-			pmcs_fixed(pmcs_collection->pmcs)[pmc] =
-				value -
-				this_cpu_read(
-					pcpu_pmus_metadata.pmcs_fixed)[pmc];
-			/* Update OLD Value */
-			this_cpu_read(pcpu_pmus_metadata.pmcs_fixed)[pmc] =
-				value;
+
+			pmcs_fixed(pmcs_collection->pmcs)[pmc] = value;
+
+			WRITE_FIXED_PMC(pmc, 0ULL);
+			
+			// TODO - FIX & RESTORE!
+			// pmcs_fixed(pmcs_collection->pmcs)[pmc] =
+			// 	value -
+			// 	this_cpu_read(
+			// 		pcpu_pmus_metadata.pmcs_fixed)[pmc];
+			
+			// pr_debug("** $$ FIXED - old %llx - new %llx\n", this_cpu_read(
+			// 		pcpu_pmus_metadata.pmcs_fixed)[pmc], value);
+			
+			// /* Update OLD Value */
+			// this_cpu_read(pcpu_pmus_metadata.pmcs_fixed)[pmc] =
+			// 	value;
+
 		}
 
 		pmcs_collection->cnt = gbl_nr_pmc_fixed + gp_cnt;

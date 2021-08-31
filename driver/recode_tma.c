@@ -197,10 +197,52 @@ pmc_evt_code TMA_HW_EVTS_LEVEL_2[6] = { { TMA_EVT(ca_stalls_mem_any) },
 					{ TMA_EVT(l2_hit) },
 					{ TMA_EVT(l1_pend_miss) } };
 
+static inline __attribute__((always_inline)) bool
+compute_tms_l0(const struct pmcs_collection *collection)
+{
+	pr_debug("CURRENTE LEVEL %u\n", this_cpu_read(pcpu_current_tma_lvl));
+
+	pr_debug("L0_FB: %llu\n", tma_eval_l0_fb(collection->pmcs));
+	pr_debug("L0_BS: %llu\n", tma_eval_l0_bs(collection->pmcs));
+	pr_debug("L0_RE: %llu\n", tma_eval_l0_re(collection->pmcs));
+	pr_debug("L0_BB: %llu\n", tma_eval_l0_bb(collection->pmcs));
+
+	return tma_eval_l0_re(collection->pmcs) < 300 &&
+	       tma_eval_l0_bb(collection->pmcs) > 30;
+}
+
+static inline __attribute__((always_inline)) bool
+compute_tms_l1(const struct pmcs_collection *collection)
+{
+	pr_debug("CBC: %llu\n", tma_eval_l1_mid_cbc(collection->pmcs));
+	pr_debug("BBC: %llu\n", tma_eval_l1_mid_bbc(collection->pmcs));
+	pr_debug("MBF: %llu\n", tma_eval_l1_mid_mbf(collection->pmcs));
+	pr_debug("L1_MB: %llu\n", tma_eval_l1_mb(collection->pmcs));
+	pr_debug("L1_CB: %llu\n", tma_eval_l1_cb(collection->pmcs));
+
+	return false;
+}
+
+static inline __attribute__((always_inline)) bool
+compute_tms_l2(const struct pmcs_collection *collection)
+{
+	pr_debug("stalls_mem_any %llx\n",
+		 EVT_IDX(collection->pmcs, ca_stalls_mem_any));
+	pr_debug("stalls_l1d_miss %llx\n",
+		 EVT_IDX(collection->pmcs, ca_stalls_l1d_miss));
+	pr_debug("L2_L1B: %llu\n", tma_eval_l2_l1b(collection->pmcs));
+	pr_debug("L2_L2B: %llu\n", tma_eval_l2_l2b(collection->pmcs));
+	pr_debug("L2_L3B: %llu\n", tma_eval_l2_l3b(collection->pmcs));
+	pr_debug("L2_DRAMB: %llu\n", tma_eval_l2_dramb(collection->pmcs));
+
+	return false;
+}
+
 struct tma_level {
-	unsigned threshold;
-	struct tma_level *prev;
-	struct tma_level *next;
+	// unsigned threshold;
+	unsigned prev;
+	unsigned next;
+	bool (*compute)(const struct pmcs_collection *collection);
 	unsigned hw_cnt;
 	pmc_evt_code *hw_evts;
 };
@@ -214,21 +256,24 @@ int recode_tma_init(void)
 
 	gbl_tma_levels[0].hw_evts = TMA_HW_EVTS_LEVEL_0;
 	gbl_tma_levels[0].hw_cnt = tma_events_size(TMA_HW_EVTS_LEVEL_0);
-	gbl_tma_levels[0].next = &gbl_tma_levels[1];
-	gbl_tma_levels[0].prev = &gbl_tma_levels[0];
-	gbl_tma_levels[0].threshold = 100;
+	gbl_tma_levels[0].next = 1;
+	gbl_tma_levels[0].prev = 0;
+	gbl_tma_levels[0].compute = compute_tms_l0;
+	// gbl_tma_levels[0].threshold = 100;
 
 	gbl_tma_levels[1].hw_evts = TMA_HW_EVTS_LEVEL_1;
 	gbl_tma_levels[1].hw_cnt = tma_events_size(TMA_HW_EVTS_LEVEL_1);
-	gbl_tma_levels[1].next = &gbl_tma_levels[2];
-	gbl_tma_levels[1].prev = &gbl_tma_levels[0];
-	gbl_tma_levels[1].threshold = 100;
+	gbl_tma_levels[1].next = 2;
+	gbl_tma_levels[1].prev = 0;
+	gbl_tma_levels[1].compute = compute_tms_l1;
+	// gbl_tma_levels[1].threshold = 100;
 
 	gbl_tma_levels[2].hw_evts = TMA_HW_EVTS_LEVEL_2;
 	gbl_tma_levels[2].hw_cnt = tma_events_size(TMA_HW_EVTS_LEVEL_2);
-	gbl_tma_levels[2].next = &gbl_tma_levels[2];
-	gbl_tma_levels[2].prev = &gbl_tma_levels[1];
-	gbl_tma_levels[2].threshold = 100;
+	gbl_tma_levels[2].next = 2;
+	gbl_tma_levels[2].prev = 1;
+	gbl_tma_levels[2].compute = compute_tms_l2;
+	// gbl_tma_levels[2].threshold = 100;
 
 	for (k = 0; k < TMA_MAX_LEVEL; ++k) {
 		setup_hw_events_on_system(gbl_tma_levels[k].hw_evts,
@@ -267,70 +312,49 @@ void update_events_index_on_this_cpu(struct hw_events *events)
 	pr_debug("Updating index_array on cpu %u\n", smp_processor_id());
 	for (idx = 0, tmp = 0; tmp < events->cnt; ++idx) {
 		if (events->mask & BIT_ULL(idx)) {
-			pr_debug("Found event on position: %u, val: %u\n", idx,
-				 tmp + 3);
+			// pr_debug("Found event on position: %u, val: %u\n", idx,
+			// 	 tmp + 3);
 			this_cpu_write(pcpu_pmcs_index_array[idx], tmp + 3);
 			tmp++;
 		}
 	}
 }
 
-void compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
+static inline __attribute__((always_inline)) void
+switch_tma_level(unsigned level)
 {
-	pr_debug("mask %llx\n", mask);
-	pr_debug("L0_mask %llx\n", TMA_L0);
-	pr_debug("L1_mask %llx\n", TMA_L1);
-	switch (this_cpu_read(pcpu_current_tma_lvl)) {
-	case 0:
-		if (computable_tma(TMA_L0, mask)) {
-			pr_debug("L0_FB: %llu\n",
-				 tma_eval_l0_fb(collection->pmcs));
-			pr_debug("L0_BS: %llu\n",
-				 tma_eval_l0_bs(collection->pmcs));
-			pr_debug("L0_RE: %llu\n",
-				 tma_eval_l0_re(collection->pmcs));
-			pr_debug("L0_BB: %llu\n",
-				 tma_eval_l0_bb(collection->pmcs));
-			setup_hw_events_on_cpu(gbl_hw_events[1]);
-			this_cpu_write(pcpu_current_tma_lvl, 1);
-		}
-		break;
-
-	case 1:
-		if (computable_tma(TMA_L1, mask)) {
-			pr_debug("CBC: %llu\n",
-				 tma_eval_l1_mid_cbc(collection->pmcs));
-			pr_debug("BBC: %llu\n",
-				 tma_eval_l1_mid_bbc(collection->pmcs));
-			pr_debug("MBF: %llu\n",
-				 tma_eval_l1_mid_mbf(collection->pmcs));
-			pr_debug("L1_MB: %llu\n",
-				 tma_eval_l1_mb(collection->pmcs));
-			pr_debug("L1_CB: %llu\n",
-				 tma_eval_l1_cb(collection->pmcs));
-			//setup_hw_events_on_cpu(gbl_hw_events[2]);
-			//this_cpu_write(pcpu_current_tma_lvl, 2);
-		}
-		break;
-
-	case 2:
-		if (computable_tma(TMA_L2, mask)) {
-			pr_debug("stalls_mem_any %llx\n",
-				 EVT_IDX(collection->pmcs, ca_stalls_mem_any));
-			pr_debug("stalls_l1d_miss %llx\n",
-				 EVT_IDX(collection->pmcs, ca_stalls_l1d_miss));
-			pr_debug("L2_L1B: %llu\n",
-				 tma_eval_l2_l1b(collection->pmcs));
-			pr_debug("L2_L2B: %llu\n",
-				 tma_eval_l2_l2b(collection->pmcs));
-			pr_debug("L2_L3B: %llu\n",
-				 tma_eval_l2_l3b(collection->pmcs));
-		}
-		break;
-
-	default:
-		pr_debug("No TMA level to be computed\n");
-	}
+	pr_debug("SWITCHING to level %u\n", level);
+	/* TODO - This must be atomic */
+	setup_hw_events_on_cpu(gbl_hw_events[level]);
+	this_cpu_write(pcpu_current_tma_lvl, level);
 }
 
-/******************/
+void compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
+{
+	/* 
+	* L0:
+	* 	- andiamo bene
+	* 	- andiamo male per BS o FB (non ci facciamo nulla)*
+	* 	- andiamo male per BB -> switch to L1
+	* 
+	* L1:
+	* 	- siamo Core Bound (non facciamo nulla) *
+	* 	- siamo Memory Bound -> switch to L2
+	* 
+	* L2:
+	* 	- siamo L1 bound -> STAY (andiamo male noi)
+	* 	- siamo L2 bound -> STAY (andiamo male noi) ? devo chiedere alle altre CPU
+	* 	- siamo L3 bound -> STAY & ASK
+	* 	- siamo DRAM bound -> STAY & ASK
+	* 
+	* 
+	*  *con SMT spento
+	*/
+
+	unsigned level = this_cpu_read(pcpu_current_tma_lvl);
+
+	if (gbl_tma_levels[level].compute(collection)) {
+		switch_tma_level(gbl_tma_levels[level].next);
+	} else {
+		switch_tma_level(gbl_tma_levels[level].prev);
+	}
