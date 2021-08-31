@@ -9,7 +9,7 @@ extern u64 __read_mostly gbl_reset_period;
 extern unsigned __read_mostly gbl_fixed_pmc_pmi;
 
 //	update this when modifying HW_EVENTS_BIT
-#define HW_EVENTS_NUMBER (14)
+#define HW_EVENTS_NUMBER (15)
 
 #define MSR_CORE_PERF_GENERAL_CTR0 MSR_IA32_PERFCTR0
 #define MSR_CORE_PERFEVTSEL_ADDRESS0 MSR_P6_EVNTSEL0

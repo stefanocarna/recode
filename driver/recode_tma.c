@@ -24,6 +24,7 @@ COMPOSE_TMA_EVT(ca_stalls_mem_any);
 COMPOSE_TMA_EVT(ea_bound_on_stores);
 COMPOSE_TMA_EVT(ea_exe_bound_0_ports);
 COMPOSE_TMA_EVT(ea_1_ports_util);
+COMPOSE_TMA_EVT(ea_2_ports_util);
 
 /* L2 */
 COMPOSE_TMA_EVT(ca_stalls_l3_miss);
@@ -49,7 +50,8 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 #define TMA_L0_BB (TMA_L0_FB | TMA_L0_BS | TMA_L0_RE)
 
 /* Few Uops Executed Threshold */
-#define TMA_L1_MID_FUET (0)
+#define TMA_L1_MID_FUET (TMA_BIT(ea_2_ports_util))
+
 /* Core Bound Cycles */
 #define TMA_L1_MID_CBC                                                         \
 	(TMA_BIT(ea_exe_bound_0_ports) | TMA_BIT(ea_1_ports_util) |            \
@@ -115,7 +117,8 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 	(SFACT -                                                               \
 	 (tma_eval_l0_fb(pmcs) + tma_eval_l0_bs(pmcs) + tma_eval_l0_re(pmcs)))
 
-#define tma_eval_l1_mid_fuet(pmcs) (0)
+
+#define tma_eval_l1_mid_fuet(pmcs) (EVT_IDX(pmcs, ea_2_ports_util) * (EVT_IDX(pmcs, ur_retire_slots) / (pmcs[evt_fix_clock_cycles] + 1)) / (TMA_PIPELINE_WIDTH + 1))
 
 #define tma_eval_l1_mid_cbc(pmcs)                                              \
 	(EVT_IDX(pmcs, ea_exe_bound_0_ports) +                                 \
@@ -174,14 +177,16 @@ pmc_evt_code TMA_HW_EVTS_LEVEL_0[4] = { { TMA_EVT(iund_core) },
 					{ TMA_EVT(ui_any) },
 					{ TMA_EVT(im_recovery_cycles) } };
 
-pmc_evt_code TMA_HW_EVTS_LEVEL_1[8] = { { TMA_EVT(iund_core) },
+pmc_evt_code TMA_HW_EVTS_LEVEL_1[9] = { { TMA_EVT(iund_core) },
 					{ TMA_EVT(ur_retire_slots) },
 					{ TMA_EVT(ui_any) },
 					{ TMA_EVT(im_recovery_cycles) },
 					{ TMA_EVT(ea_exe_bound_0_ports) },
+					{ TMA_EVT(ea_bound_on_stores) },
 					{ TMA_EVT(ea_1_ports_util) },
-					{ TMA_EVT(ca_stalls_mem_any) },
-					{ TMA_EVT(ea_bound_on_stores) } };
+					{ TMA_EVT(ea_2_ports_util) },
+					{ TMA_EVT(ca_stalls_mem_any) }
+					 };
 
 pmc_evt_code TMA_HW_EVTS_LEVEL_2[6] = { { TMA_EVT(ca_stalls_mem_any) },
 					{ TMA_EVT(ca_stalls_l1d_miss) },
@@ -270,6 +275,9 @@ void update_events_index_on_this_cpu(struct hw_events *events)
 
 void compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
 {
+	pr_debug("mask %llx\n", mask);
+	pr_debug("L0_mask %llx\n", TMA_L0);
+	pr_debug("L1_mask %llx\n", TMA_L1);
 	switch (this_cpu_read(pcpu_current_tma_lvl)) {
 	case 0:
 		if (computable_tma(TMA_L0, mask)) {
@@ -288,18 +296,18 @@ void compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
 
 	case 1:
 		if (computable_tma(TMA_L1, mask)) {
-			pr_debug("CBC: %llx\n",
+			pr_debug("CBC: %llu\n",
 				 tma_eval_l1_mid_cbc(collection->pmcs));
-			pr_debug("BBC: %llx\n",
+			pr_debug("BBC: %llu\n",
 				 tma_eval_l1_mid_bbc(collection->pmcs));
-			pr_debug("MBF: %llx\n",
+			pr_debug("MBF: %llu\n",
 				 tma_eval_l1_mid_mbf(collection->pmcs));
-			pr_debug("L1_MB: %llx\n",
+			pr_debug("L1_MB: %llu\n",
 				 tma_eval_l1_mb(collection->pmcs));
-			pr_debug("L1_CB: %llx\n",
+			pr_debug("L1_CB: %llu\n",
 				 tma_eval_l1_cb(collection->pmcs));
-			setup_hw_events_on_cpu(gbl_hw_events[2]);
-			this_cpu_write(pcpu_current_tma_lvl, 2);
+			//setup_hw_events_on_cpu(gbl_hw_events[2]);
+			//this_cpu_write(pcpu_current_tma_lvl, 2);
 		}
 		break;
 
