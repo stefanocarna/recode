@@ -86,6 +86,8 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 
 /* TMA formulas */
 
+#define SUB_SAFE (a, b)(a > b ? a - b : 0)
+
 /* Scale factor */
 #define SFACT 1000
 
@@ -96,7 +98,8 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 	(TMA_PIPELINE_WIDTH * pmcs[evt_fix_clock_cycles])
 
 #define tma_eval_l0_fb(pmcs)                                                   \
-	((SFACT * EVT_IDX(pmcs, iund_core)) / (tma_eval_l0_mid_total_slots(pmcs) + 1))
+	((SFACT * EVT_IDX(pmcs, iund_core)) /                                  \
+	 (tma_eval_l0_mid_total_slots(pmcs) + 1))
 
 #define tma_eval_l0_bs(pmcs)                                                   \
 	((SFACT *                                                              \
@@ -119,7 +122,7 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 	 EVT_IDX(pmcs, ea_1_ports_util) + tma_eval_l1_mid_fuet(pmcs))
 
 #define tma_eval_l1_mid_bbc(pmcs)                                              \
-	(tma_eval_l1_mid_cbc(pmcs) + EVT_IDX(pmcs, ca_stalls_mem_any) +                 \
+	(tma_eval_l1_mid_cbc(pmcs) + EVT_IDX(pmcs, ca_stalls_mem_any) +        \
 	 EVT_IDX(pmcs, ea_bound_on_stores))
 
 #define tma_eval_l1_mid_mbf(pmcs)                                              \
@@ -131,12 +134,13 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 #define tma_eval_l1_mb(pmcs)                                                   \
 	((tma_eval_l1_mid_mbf(pmcs) * tma_eval_l0_bb(pmcs)) / SFACT)
 
-#define tma_eval_l1_cb(pmcs) (tma_eval_l0_bb(pmcs) - tma_eval_l1_mb(pmcs))
+#define tma_eval_l1_cb(pmcs)                                                   \
+	SUB_SAFE(tma_eval_l0_bb(pmcs) - tma_eval_l1_mb(pmcs))
 
 #define tma_eval_l2_mid_br(pmcs)                                               \
 	(SFACT *                                                               \
-	 (EVT_IDX(pmcs, ca_stalls_l1d_miss) -                                  \
-	  EVT_IDX(pmcs, ca_stalls_l2_miss)) /                                  \
+	 SUB_SAFE(EVT_IDX(pmcs, ca_stalls_l1d_miss) -                          \
+		  EVT_IDX(pmcs, ca_stalls_l2_miss)) /                          \
 	 (pmcs[evt_fix_clock_cycles] + 1))
 
 #define tma_eval_l2_l1b(pmcs)                                                  \
@@ -304,11 +308,9 @@ void compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
 	case 2:
 		if (computable_tma(TMA_L2, mask)) {
 			pr_debug("stalls_mem_any %llx\n",
-				 EVT_IDX(collection->pmcs,
-					 ca_stalls_mem_any));
+				 EVT_IDX(collection->pmcs, ca_stalls_mem_any));
 			pr_debug("stalls_l1d_miss %llx\n",
-				 EVT_IDX(collection->pmcs,
-					 ca_stalls_l1d_miss));
+				 EVT_IDX(collection->pmcs, ca_stalls_l1d_miss));
 			pr_debug("L2_L1B: %llu\n",
 				 tma_eval_l2_l1b(collection->pmcs));
 			pr_debug("L2_L2B: %llu\n",
