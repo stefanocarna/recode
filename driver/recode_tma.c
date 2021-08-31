@@ -86,7 +86,7 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 
 /* TMA formulas */
 
-#define SUB_SAFE (a, b)(a > b ? a - b : 0)
+#define SUB_SAFE(a, b) (a > b ? a - b : 0)
 
 /* Scale factor */
 #define SFACT 1000
@@ -135,11 +135,11 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 	((tma_eval_l1_mid_mbf(pmcs) * tma_eval_l0_bb(pmcs)) / SFACT)
 
 #define tma_eval_l1_cb(pmcs)                                                   \
-	SUB_SAFE(tma_eval_l0_bb(pmcs) - tma_eval_l1_mb(pmcs))
+	SUB_SAFE(tma_eval_l0_bb(pmcs), tma_eval_l1_mb(pmcs))
 
 #define tma_eval_l2_mid_br(pmcs)                                               \
 	(SFACT *                                                               \
-	 SUB_SAFE(EVT_IDX(pmcs, ca_stalls_l1d_miss) -                          \
+	 SUB_SAFE(EVT_IDX(pmcs, ca_stalls_l1d_miss),                           \
 		  EVT_IDX(pmcs, ca_stalls_l2_miss)) /                          \
 	 (pmcs[evt_fix_clock_cycles] + 1))
 
@@ -231,8 +231,6 @@ int recode_tma_init(void)
 	pr_warn("EVT %x - idx %u\n", TMA_EVT(im_recovery_cycles),
 		TMA_IDX(im_recovery_cycles));
 	pr_warn("EVT %x - idx %u\n", TMA_EVT(iund_core), TMA_IDX(iund_core));
-
-	pr_warn("Compute %llu\n", TMA_MASK(2, im_recovery_cycles, iund_core));
 
 	return 0;
 }
