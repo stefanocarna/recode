@@ -262,7 +262,9 @@ void pmi_function(unsigned cpu)
 	dc_sample->tracked = true;
 	dc_sample->k_thread = !current->mm;
 
-	dc_sample->system_tsc = rdtsc_ordered();
+	dc_sample->system_tsc = per_cpu(pcpu_pmus_metadata.last_tsc, cpu);
+
+	dc_sample->tsc_cycles = per_cpu(pcpu_pmus_metadata.sample_tsc, cpu);
 	dc_sample->core_cycles = pmcs_collection->pmcs[1];
 	dc_sample->core_cycles_tsc_ref = pmcs_collection->pmcs[2];
 	// dc_sample->ctx_evts = per_cpu(pcpu_pmus_metadata.ctx_evts, cpu);
@@ -303,6 +305,9 @@ skip:
 
 static void manage_pmu_state(void *dummy)
 {
+	/* This is not precise */
+	this_cpu_write(pcpu_pmus_metadata.last_tsc, rdtsc_ordered());
+
 	on_context_switch_callback(NULL, false, query_tracker(current->pid));
 }
 

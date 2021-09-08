@@ -74,7 +74,9 @@ static int cpu_logger_seq_show(struct seq_file *m, void *v)
 	seq_printf(m, " %u |", dc_sample->id);
 	seq_printf(m, " %u ", dc_sample->tracked);
 	seq_printf(m, "- %u |", dc_sample->k_thread);
-	seq_printf(m, " %llu ", dc_sample->system_tsc);
+	seq_printf(m, " %llu |", dc_sample->system_tsc);
+	
+	seq_printf(m, " %llu ", dc_sample->tsc_cycles);
 	seq_printf(m, " %llu ", dc_sample->core_cycles);
 	seq_printf(m, "- %llu |", dc_sample->core_cycles_tsc_ref);
 

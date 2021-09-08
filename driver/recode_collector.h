@@ -9,6 +9,8 @@ struct data_collector_sample {
 	unsigned tracked;
 	unsigned k_thread;
 	pmc_ctr system_tsc;
+
+	pmc_ctr tsc_cycles;
 	pmc_ctr core_cycles;
 	pmc_ctr core_cycles_tsc_ref;
 	// unsigned ctx_evts;

@@ -29,20 +29,19 @@ unsigned pmc_collect_partial_values(unsigned cpu, unsigned gp_cnt,
 			pmcs_fixed(pmcs_collection->pmcs)[pmc] = value;
 
 			WRITE_FIXED_PMC(pmc, 0ULL);
-			
+
 			// TODO - FIX & RESTORE!
 			// pmcs_fixed(pmcs_collection->pmcs)[pmc] =
 			// 	value -
 			// 	this_cpu_read(
 			// 		pcpu_pmus_metadata.pmcs_fixed)[pmc];
-			
+
 			// pr_debug("** $$ FIXED - old %llx - new %llx\n", this_cpu_read(
 			// 		pcpu_pmus_metadata.pmcs_fixed)[pmc], value);
-			
+
 			// /* Update OLD Value */
 			// this_cpu_read(pcpu_pmus_metadata.pmcs_fixed)[pmc] =
 			// 	value;
-
 		}
 
 		pmcs_collection->cnt = gbl_nr_pmc_fixed + gp_cnt;
@@ -93,6 +92,7 @@ bool pmc_multiplexing_on_pmi(unsigned cpu)
 
 	/* enough pmcs for events or completed multiplexing */
 	if (req_hw_events == 0) {
+		pmc_ctr tsc;
 		unsigned k, pmc;
 		unsigned scale =
 			per_cpu(pcpu_pmus_metadata.pmi_partial_cnt, cpu);
@@ -123,7 +123,12 @@ bool pmc_multiplexing_on_pmi(unsigned cpu)
 		/* Setup from  */
 		fast_setup_general_pmc_on_cpu(cpu, hw_events->cfgs, 0,
 					      req_hw_events);
-					      
+
+		tsc = rdtsc_ordered();
+		per_cpu(pcpu_pmus_metadata.sample_tsc, cpu) =
+			tsc - per_cpu(pcpu_pmus_metadata.last_tsc, cpu);
+		per_cpu(pcpu_pmus_metadata.last_tsc, cpu) = tsc;
+
 		per_cpu(pcpu_pmus_metadata.hw_events_index, cpu) = 0;
 		per_cpu(pcpu_pmus_metadata.pmi_partial_cnt, cpu) = 0;
 
@@ -135,8 +140,7 @@ bool pmc_multiplexing_on_pmi(unsigned cpu)
 		fast_setup_general_pmc_on_cpu(cpu, hw_events->cfgs, index,
 					      req_hw_events);
 		/* NOTE - This value should always be smaller than "cnt" */
-		per_cpu(pcpu_pmus_metadata.hw_events_index, cpu) =
-			index;
+		per_cpu(pcpu_pmus_metadata.hw_events_index, cpu) = index;
 
 		return false;
 	}
