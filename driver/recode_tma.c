@@ -1,37 +1,11 @@
 /* test */
 #include <linux/slab.h>
 
-#include "pmu/pmc_events.h"
+#include "pmu/hw_events.h"
 #include "recode_tma.h"
 
-DEFINE_PER_CPU(u8[HW_EVENTS_NUMBER], pcpu_pmcs_index_array);
+DEFINE_PER_CPU(u8[NR_HW_EVENTS], pcpu_pmcs_index_array);
 DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
-
-#define TMA_EVT(name) ((tma_evt_##name.evt).raw)
-#define TMA_IDX(name) (tma_evt_##name.idx)
-#define TMA_BIT(name) (BIT_ULL(TMA_IDX(name)))
-
-/* TMA events */
-
-/* L0 */
-COMPOSE_TMA_EVT(im_recovery_cycles);
-COMPOSE_TMA_EVT(ui_any);
-COMPOSE_TMA_EVT(iund_core);
-COMPOSE_TMA_EVT(ur_retire_slots);
-
-/* L1 */
-COMPOSE_TMA_EVT(ca_stalls_mem_any);
-COMPOSE_TMA_EVT(ea_bound_on_stores);
-COMPOSE_TMA_EVT(ea_exe_bound_0_ports);
-COMPOSE_TMA_EVT(ea_1_ports_util);
-COMPOSE_TMA_EVT(ea_2_ports_util);
-
-/* L2 */
-COMPOSE_TMA_EVT(ca_stalls_l3_miss);
-COMPOSE_TMA_EVT(ca_stalls_l2_miss);
-COMPOSE_TMA_EVT(ca_stalls_l1d_miss);
-COMPOSE_TMA_EVT(l2_hit);
-COMPOSE_TMA_EVT(l1_pend_miss);
 
 /* TMA masks */
 
@@ -39,30 +13,30 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 #define TMA_PIPELINE_WIDTH 4
 
 /* Frontend Bound */
-#define TMA_L0_FB (TMA_BIT(iund_core))
+#define TMA_L0_FB (HW_EVT_BIT(iund_core))
 /* Bad Speculation */
 #define TMA_L0_BS                                                              \
-	(TMA_BIT(ur_retire_slots) | TMA_BIT(ui_any) |                          \
-	 TMA_BIT(im_recovery_cycles))
+	(HW_EVT_BIT(ur_retire_slots) | HW_EVT_BIT(ui_any) |                    \
+	 HW_EVT_BIT(im_recovery_cycles))
 /* Retiring */
-#define TMA_L0_RE (TMA_BIT(ur_retire_slots))
+#define TMA_L0_RE (HW_EVT_BIT(ur_retire_slots))
 /* Backend Bound */
 #define TMA_L0_BB (TMA_L0_FB | TMA_L0_BS | TMA_L0_RE)
 
 /* Few Uops Executed Threshold */
-#define TMA_L1_MID_FUET (TMA_BIT(ea_2_ports_util))
+#define TMA_L1_MID_FUET (HW_EVT_BIT(ea_2_ports_util))
 
 /* Core Bound Cycles */
 #define TMA_L1_MID_CBC                                                         \
-	(TMA_BIT(ea_exe_bound_0_ports) | TMA_BIT(ea_1_ports_util) |            \
+	(HW_EVT_BIT(ea_exe_bound_0_ports) | HW_EVT_BIT(ea_1_ports_util) |      \
 	 TMA_L1_MID_FUET)
 /* Backend Bound Cycles */
 #define TMA_L1_MID_BBC                                                         \
-	(TMA_BIT(ca_stalls_mem_any) | TMA_BIT(ea_bound_on_stores) |            \
+	(HW_EVT_BIT(ca_stalls_mem_any) | HW_EVT_BIT(ea_bound_on_stores) |      \
 	 TMA_L1_MID_CBC)
 /* Memory Bound Fraction */
 #define TMA_L1_MID_MBF                                                         \
-	(TMA_BIT(ca_stalls_mem_any) | TMA_BIT(ea_bound_on_stores) |            \
+	(HW_EVT_BIT(ca_stalls_mem_any) | HW_EVT_BIT(ea_bound_on_stores) |      \
 	 TMA_L1_MID_BBC)
 /* Memory Bound */
 #define TMA_L1_MB (TMA_L0_BB | TMA_L1_MID_MBF)
@@ -70,17 +44,22 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 #define TMA_L1_CB (TMA_L0_BB | TMA_L1_MB)
 
 /* L2 Bound Ratio */
-#define TMA_L2_MID_BR (TMA_BIT(ca_stalls_l1d_miss) | TMA_BIT(ca_stalls_l2_miss))
+#define TMA_L2_MID_BR                                                          \
+	(HW_EVT_BIT(ca_stalls_l1d_miss) | HW_EVT_BIT(ca_stalls_l2_miss))
 /* L1 Bound */
-#define TMA_L2_L1B (TMA_BIT(ca_stalls_mem_any) | TMA_BIT(ca_stalls_l1d_miss))
+#define TMA_L2_L1B                                                             \
+	(HW_EVT_BIT(ca_stalls_mem_any) | HW_EVT_BIT(ca_stalls_l1d_miss))
 /* L3 Bound */
-#define TMA_L2_L3B (TMA_BIT(ca_stalls_l2_miss) | TMA_BIT(ca_stalls_l3_miss))
+#define TMA_L2_L3B                                                             \
+	(HW_EVT_BIT(ca_stalls_l2_miss) | HW_EVT_BIT(ca_stalls_l3_miss))
 /* L2 Bound */
-#define TMA_L2_L2B (TMA_BIT(l2_hit) | TMA_BIT(l1_pend_miss) | TMA_L2_MID_BR)
+#define TMA_L2_L2B                                                             \
+	(HW_EVT_BIT(l2_hit) | HW_EVT_BIT(l1_pend_miss) | TMA_L2_MID_BR)
 /* DRAM Bound */
-#define TMA_L2_DRAMB (TMA_BIT(ca_stalls_l3_miss) | TMA_L2_MID_BR | TMA_L2_L2B)
+#define TMA_L2_DRAMB                                                           \
+	(HW_EVT_BIT(ca_stalls_l3_miss) | TMA_L2_MID_BR | TMA_L2_L2B)
 /* Store Bound */
-#define TMA_L2_SB (TMA_BIT(ea_bound_on_stores))
+#define TMA_L2_SB (HW_EVT_BIT(ea_bound_on_stores))
 
 #define TMA_L0 (TMA_L0_BB | TMA_L0_BS | TMA_L0_FB | TMA_L0_RE)
 #define TMA_L1 (TMA_L1_CB | TMA_L1_MB)
@@ -94,7 +73,7 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 #define SFACT 1000
 
 #define EVT_IDX(pmcs, event)                                                   \
-	(pmcs[this_cpu_read(pcpu_pmcs_index_array[TMA_IDX(event)])])
+	(pmcs[this_cpu_read(pcpu_pmcs_index_array[HW_EVT_IDX(event)])])
 
 #define tma_eval_l0_mid_total_slots(pmcs)                                      \
 	(TMA_PIPELINE_WIDTH * pmcs[evt_fix_clock_cycles])
@@ -175,27 +154,24 @@ COMPOSE_TMA_EVT(l1_pend_miss);
 #define computable_tma(tma, mask) ((tma & mask) == tma)
 #define tma_events_size(evts) (sizeof(evts) / sizeof(evts[0]))
 
-pmc_evt_code TMA_HW_EVTS_LEVEL_0[4] = { { TMA_EVT(iund_core) },
-					{ TMA_EVT(ur_retire_slots) },
-					{ TMA_EVT(ui_any) },
-					{ TMA_EVT(im_recovery_cycles) } };
+#define TMA_NR_L0_FORMULAS 4
+#define TMA_L0_FORMULAS                                                        \
+	X_TMA_LEVELS_FORMULAS(l0_bb, 0)                                        \
+	X_TMA_LEVELS_FORMULAS(l0_bs, 1)                                        \
+	X_TMA_LEVELS_FORMULAS(l0_re, 2)                                        \
+	X_TMA_LEVELS_FORMULAS(l0_fb, 3)
 
-pmc_evt_code TMA_HW_EVTS_LEVEL_1[9] = { { TMA_EVT(iund_core) },
-					{ TMA_EVT(ur_retire_slots) },
-					{ TMA_EVT(ui_any) },
-					{ TMA_EVT(im_recovery_cycles) },
-					{ TMA_EVT(ea_exe_bound_0_ports) },
-					{ TMA_EVT(ea_bound_on_stores) },
-					{ TMA_EVT(ea_1_ports_util) },
-					{ TMA_EVT(ea_2_ports_util) },
-					{ TMA_EVT(ca_stalls_mem_any) } };
+#define TMA_NR_L1_FORMULAS 2
+#define TMA_L1_FORMULAS                                                        \
+	X_TMA_LEVELS_FORMULAS(l1_mb, 0)                                        \
+	X_TMA_LEVELS_FORMULAS(l1_cb, 1)
 
-pmc_evt_code TMA_HW_EVTS_LEVEL_2[6] = { { TMA_EVT(ca_stalls_mem_any) },
-					{ TMA_EVT(ca_stalls_l1d_miss) },
-					{ TMA_EVT(ca_stalls_l2_miss) },
-					{ TMA_EVT(ca_stalls_l3_miss) },
-					{ TMA_EVT(l2_hit) },
-					{ TMA_EVT(l1_pend_miss) } };
+#define TMA_NR_L2_FORMULAS 4
+#define TMA_L2_FORMULAS                                                        \
+	X_TMA_LEVELS_FORMULAS(l2_l1b, 0)                                       \
+	X_TMA_LEVELS_FORMULAS(l2_l2b, 1)                                       \
+	X_TMA_LEVELS_FORMULAS(l2_l3b, 2)                                       \
+	X_TMA_LEVELS_FORMULAS(l2_dramb, 3)
 
 static inline __attribute__((always_inline)) bool
 compute_tms_l0(const struct pmcs_collection *collection)
@@ -252,37 +228,78 @@ struct tma_level gbl_tma_levels[TMA_MAX_LEVEL];
 
 int recode_tma_init(void)
 {
-	unsigned k;
+	unsigned k = 0;
+
+	pmc_evt_code *TMA_HW_EVTS_LEVEL_0 =
+		kmalloc(sizeof(pmc_evt_code *) * 4, GFP_KERNEL);
+
+	if (!TMA_HW_EVTS_LEVEL_0) {
+		pr_err("Cannot allocate memory for TMA_HW_EVTS_LEVEL_0\n");
+		return -ENOMEM;
+	}
+
+	TMA_HW_EVTS_LEVEL_0[k++].raw = HW_EVT_COD(iund_core);
+	TMA_HW_EVTS_LEVEL_0[k++].raw = HW_EVT_COD(ur_retire_slots);
+	TMA_HW_EVTS_LEVEL_0[k++].raw = HW_EVT_COD(ui_any);
+	TMA_HW_EVTS_LEVEL_0[k++].raw = HW_EVT_COD(im_recovery_cycles);
 
 	gbl_tma_levels[0].hw_evts = TMA_HW_EVTS_LEVEL_0;
-	gbl_tma_levels[0].hw_cnt = tma_events_size(TMA_HW_EVTS_LEVEL_0);
+	gbl_tma_levels[0].hw_cnt = k;
 	gbl_tma_levels[0].next = 1;
 	gbl_tma_levels[0].prev = 0;
 	gbl_tma_levels[0].compute = compute_tms_l0;
-	// gbl_tma_levels[0].threshold = 100;
+
+	k = 0;
+	pmc_evt_code *TMA_HW_EVTS_LEVEL_1 =
+		kmalloc(sizeof(pmc_evt_code *) * 9, GFP_KERNEL);
+		
+	if (!TMA_HW_EVTS_LEVEL_1) {
+		pr_err("Cannot allocate memory for TMA_HW_EVTS_LEVEL_1\n");
+		return -ENOMEM;
+	}
+
+	TMA_HW_EVTS_LEVEL_1[k++].raw = HW_EVT_COD(iund_core);
+	TMA_HW_EVTS_LEVEL_1[k++].raw = HW_EVT_COD(ur_retire_slots);
+	TMA_HW_EVTS_LEVEL_1[k++].raw = HW_EVT_COD(ui_any);
+	TMA_HW_EVTS_LEVEL_1[k++].raw = HW_EVT_COD(im_recovery_cycles);
+	TMA_HW_EVTS_LEVEL_1[k++].raw = HW_EVT_COD(ea_exe_bound_0_ports);
+	TMA_HW_EVTS_LEVEL_1[k++].raw = HW_EVT_COD(ea_bound_on_stores);
+	TMA_HW_EVTS_LEVEL_1[k++].raw = HW_EVT_COD(ea_1_ports_util);
+	TMA_HW_EVTS_LEVEL_1[k++].raw = HW_EVT_COD(ea_2_ports_util);
+	TMA_HW_EVTS_LEVEL_1[k++].raw = HW_EVT_COD(ca_stalls_mem_any);
 
 	gbl_tma_levels[1].hw_evts = TMA_HW_EVTS_LEVEL_1;
-	gbl_tma_levels[1].hw_cnt = tma_events_size(TMA_HW_EVTS_LEVEL_1);
+	gbl_tma_levels[1].hw_cnt = k;
 	gbl_tma_levels[1].next = 2;
 	gbl_tma_levels[1].prev = 0;
 	gbl_tma_levels[1].compute = compute_tms_l1;
-	// gbl_tma_levels[1].threshold = 100;
+
+	k = 0;
+	pmc_evt_code *TMA_HW_EVTS_LEVEL_2 =
+		kmalloc(sizeof(pmc_evt_code *) * 6, GFP_KERNEL);
+		
+	if (!TMA_HW_EVTS_LEVEL_2) {
+		pr_err("Cannot allocate memory for TMA_HW_EVTS_LEVEL_2\n");
+		return -ENOMEM;
+	}
+
+	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(ca_stalls_l1d_miss);
+	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(ca_stalls_mem_any);
+	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(ca_stalls_l2_miss);
+	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(ca_stalls_l3_miss);
+	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(l2_hit);
+	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(l1_pend_miss);
 
 	gbl_tma_levels[2].hw_evts = TMA_HW_EVTS_LEVEL_2;
-	gbl_tma_levels[2].hw_cnt = tma_events_size(TMA_HW_EVTS_LEVEL_2);
+	gbl_tma_levels[2].hw_cnt = k;
 	gbl_tma_levels[2].next = 2;
 	gbl_tma_levels[2].prev = 1;
 	gbl_tma_levels[2].compute = compute_tms_l2;
-	// gbl_tma_levels[2].threshold = 100;
 
 	for (k = 0; k < TMA_MAX_LEVEL; ++k) {
 		setup_hw_events_on_system(gbl_tma_levels[k].hw_evts,
 					  gbl_tma_levels[k].hw_cnt);
 	}
-
-	pr_warn("EVT %x - idx %u\n", TMA_EVT(im_recovery_cycles),
-		TMA_IDX(im_recovery_cycles));
-	pr_warn("EVT %x - idx %u\n", TMA_EVT(iund_core), TMA_IDX(iund_core));
 
 	return 0;
 }
@@ -325,8 +342,49 @@ switch_tma_level(unsigned level)
 {
 	pr_debug("SWITCHING to level %u\n", level);
 	/* TODO - This must be atomic */
-	setup_hw_events_on_cpu(gbl_hw_events[level]);
+	setup_hw_events_on_cpu(gbl_hw_evts_groups[level]);
 	this_cpu_write(pcpu_current_tma_lvl, level);
+}
+
+struct data_collector_sample *
+get_sample_and_compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
+{
+	struct data_collector_sample *dc_sample = NULL;
+	unsigned level = this_cpu_read(pcpu_current_tma_lvl);
+
+/* This macro is just to save code lines */
+#define generate_empty_sample(level)                                           \
+	/* Get a sample crafted ad-hoc to fit the current hw_events */         \
+	dc_sample = get_write_dc_sample(per_cpu(pcpu_data_collector, cpu),     \
+					TMA_NR_L##level##_FORMULAS);           \
+	if (unlikely(!dc_sample)) {                                            \
+		pr_debug("Got a NULL WR SAMPLE inside PMI\n");                 \
+		return NULL;                                                        \
+	}                                                                      \
+	dc_sample->pmcs.cnt = TMA_NR_L##level##_FORMULAS;                      \
+	dc_sample->pmcs.mask = mask
+
+#define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
+	dc_sample->pmcs.pmcs[idx] = tma_eval_##name(collection->pmcs);
+	switch (level) {
+	case 0:
+		generate_empty_sample(0);
+		TMA_L0_FORMULAS
+		break;
+	case 1:
+		generate_empty_sample(1);
+		TMA_L1_FORMULAS
+		break;
+	case 2:
+		generate_empty_sample(2);
+		TMA_L2_FORMULAS
+		break;
+	default:
+		pr_warn("Unrecognized TMA level %u\n", level);
+		return NULL;
+	}
+#undef X_TMA_LEVELS_FORMULAS
+	return dc_sample;
 }
 
 void compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
@@ -358,3 +416,4 @@ void compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
 	} else {
 		switch_tma_level(gbl_tma_levels[level].prev);
 	}
+}

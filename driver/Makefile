@@ -26,6 +26,7 @@ DEVICE_OBJECTS 	:= $(DEVICE_SOURCES:%.c=%.o)
 
 $(MODULE_NAME)-y += pmu/pmi.o
 $(MODULE_NAME)-y += pmu/pmu.o
+$(MODULE_NAME)-y += pmu/pmu_events.o
 $(MODULE_NAME)-y += pmu/multiplexer.o
 
 $(MODULE_NAME)-y += device/proc.o

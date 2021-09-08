@@ -8,8 +8,7 @@
 extern u64 __read_mostly gbl_reset_period;
 extern unsigned __read_mostly gbl_fixed_pmc_pmi;
 
-//	update this when modifying HW_EVENTS_BIT
-#define HW_EVENTS_NUMBER (15)
+#define MAX_PARALLEL_HW_EVENTS	32
 
 #define MSR_CORE_PERF_GENERAL_CTR0 MSR_IA32_PERFCTR0
 #define MSR_CORE_PERFEVTSEL_ADDRESS0 MSR_P6_EVNTSEL0
@@ -45,10 +44,9 @@ DECLARE_PER_CPU(struct pmus_metadata, pcpu_pmus_metadata);
 extern unsigned __read_mostly gbl_nr_pmc_fixed;
 extern unsigned __read_mostly gbl_nr_pmc_general;
 
-#define MAX_HW_EVENTS 8
-extern unsigned __read_mostly gbl_nr_hw_events;
-extern struct hw_events * __read_mostly gbl_hw_events[MAX_HW_EVENTS];
-extern pmc_evt_code HW_EVENTS_BITS[];
+#define MAX_GBL_HW_EVTS 8
+extern unsigned __read_mostly gbl_nr_hw_evts_groups;
+extern struct hw_events * __read_mostly gbl_hw_evts_groups[MAX_GBL_HW_EVTS];
 
 #define FIXED_TO_BITS_MASK                                                     \
 	((BIT_ULL(gbl_nr_pmc_fixed) - 1) << PERF_GLOBAL_CTRL_FIXED0_SHIFT)
@@ -79,8 +77,6 @@ void disable_pmc_on_this_cpu(bool force);
 
 void enable_pmc_on_system(void);
 void disable_pmc_on_system(void);
-
-struct pmcs_collection *get_pmcs_collection_on_this_cpu(void);
 
 void get_machine_configuration(void);
 

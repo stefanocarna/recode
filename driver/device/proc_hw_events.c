@@ -4,9 +4,10 @@
 
 #include "proc.h"
 #include "../pmu/pmu.h"
+#include "../pmu/hw_events.h"
 #include "../recode_config.h"
 
-#define DATA_HEADER "# PID,TRACKED,KTHREAD,CTX_EVT,TIME,TSC,INST,CYCLES,TSC_CYCLES,*"
+#define DATA_HEADER "# PID,TRACKED,KTHREAD,CTX_EVTS,TIME,TSC,INST,CYCLES,TSC_CYCLES,*"
 
 static int sampling_hw_events_show(struct seq_file *m, void *v)
 {
@@ -14,13 +15,13 @@ static int sampling_hw_events_show(struct seq_file *m, void *v)
 
 	seq_printf(m, "%s\n", DATA_HEADER);
 
-	for (k = 0; k < gbl_nr_hw_events; ++k) {
-		seq_printf(m, "%llx\t\t", gbl_hw_events[k]->mask);
+	for (k = 0; k < gbl_nr_hw_evts_groups; ++k) {
+		seq_printf(m, "%llx\t\t", gbl_hw_evts_groups[k]->mask);
 			/* Check bit - Avoid comma*/
 			for (i = 0; i < 64; i++) {
 				/* Check bit */
-				if (gbl_hw_events[k]->mask & BIT(i)) {
-					seq_printf(m, ",%x", HW_EVENTS_BITS[i].raw);
+				if (gbl_hw_evts_groups[k]->mask & BIT(i)) {
+					seq_printf(m, ",%x", gbl_raw_events[i].raw);
 				}
 			}
 			seq_printf(m, "\n");

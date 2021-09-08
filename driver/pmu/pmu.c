@@ -7,62 +7,16 @@
 #include "recode_config.h"
 #include "pmu/pmu.h"
 #include "pmu/pmi.h"
-#include "pmu/pmc_events.h"
+#include "pmu/hw_events.h"
 #include "recode_tma.h"
-
-pmc_evt_code HW_EVENTS_BITS[] = { { evt_im_recovery_cycles },
-				  { evt_ui_any },
-				  { evt_iund_core },
-				  { evt_ur_retire_slots },
-				  { evt_ca_stalls_mem_any },
-				  { evt_ea_bound_on_stores },
-				  { evt_ea_exe_bound_0_ports },
-				  { evt_ea_1_ports_util },
-				  { evt_ea_2_ports_util },
-				  { evt_ca_stalls_l3_miss },
-				  { evt_ca_stalls_l2_miss },
-				  { evt_ca_stalls_l1d_miss },
-				  { evt_l2_hit },
-				  { evt_l1_pend_miss },
-				  /*
-					//	not used
-				  { evt_ca_stalls_total },
-				  { evt_ea_2_ports_util },
-				  { evt_ea_3_ports_util },
-				  { evt_ea_4_ports_util },
-				  { evt_rse_empty_cycles },
-				  { evt_cpu_clk_unhalted },
-				  { stlb_miss_loads },
-				  { tlb_page_walk },
-				  { evt_loads_all },
-				  { evt_stores_all },
-				  { evt_l2_reference },
-				  { evt_l2_misses },
-				  { evt_l2_all_rfo },
-				  { evt_l2_rfo_misses },
-				  { evt_l2_all_data },
-				  { evt_l2_data_misses },
-				  { evt_l2_all_code },
-				  { evt_l2_code_misses },
-				  { evt_l2_all_pre },
-				  { evt_l2_pre_misses },
-				  { evt_l2_all_demand },
-				  { evt_l2_demand_misses },
-				  { evt_l2_wb },
-				  { evt_l2_in_all },
-				  { evt_l2_out_silent },
-				  { evt_l2_out_non_silent },
-				  { evt_l2_out_useless },
-					*/
-				  { evt_null } };
 
 DEFINE_PER_CPU(struct pmus_metadata, pcpu_pmus_metadata) = { 0 };
 
 unsigned __read_mostly gbl_nr_pmc_fixed = 0;
 unsigned __read_mostly gbl_nr_pmc_general = 0;
 
-unsigned __read_mostly gbl_nr_hw_events = 0;
-struct hw_events *__read_mostly gbl_hw_events[MAX_HW_EVENTS] = { 0 };
+unsigned __read_mostly gbl_nr_hw_evts_groups = 0;
+struct hw_events *__read_mostly gbl_hw_evts_groups[MAX_GBL_HW_EVTS] = { 0 };
 
 void get_machine_configuration(void)
 {
@@ -151,17 +105,17 @@ void inline __attribute__((always_inline)) disable_pmc_on_this_cpu(bool force)
 		__disable_pmc_on_cpu(NULL);
 }
 
-static void __restore_and_enable_pmc_on_this_cpu(bool *state)
-{
-	if (*state)
-		enable_pmc_on_this_cpu(true);
-}
+// static void __restore_and_enable_pmc_on_this_cpu(bool *state)
+// {
+// 	if (*state)
+// 		enable_pmc_on_this_cpu(true);
+// }
 
-static void __save_and_disable_pmc_on_this_cpu(bool *state)
-{
-	*state = this_cpu_read(pcpu_pmus_metadata.pmcs_active);
-	disable_pmc_on_this_cpu(true);
-}
+// static void __save_and_disable_pmc_on_this_cpu(bool *state)
+// {
+// 	*state = this_cpu_read(pcpu_pmus_metadata.pmcs_active);
+// 	disable_pmc_on_this_cpu(true);
+// }
 
 void inline __attribute__((always_inline)) enable_pmc_on_system(void)
 {
@@ -171,17 +125,6 @@ void inline __attribute__((always_inline)) enable_pmc_on_system(void)
 void inline __attribute__((always_inline)) disable_pmc_on_system(void)
 {
 	on_each_cpu(__disable_pmc_on_cpu, NULL, 1);
-}
-
-struct pmcs_collection *get_pmcs_collection_on_this_cpu(void)
-{
-	struct pmcs_collection *pmcs_collection =
-		this_cpu_read(pcpu_pmus_metadata.pmcs_collection);
-
-	if (!pmcs_collection || !pmcs_collection->complete)
-		return NULL;
-
-	return pmcs_collection;
 }
 
 void debug_pmu_state(void)
@@ -219,161 +162,6 @@ void debug_pmu_state(void)
 	put_cpu();
 }
 
-static void flush_and_clean_hw_events(void)
-{
-}
-
-/* Required preemption disabled */
-void setup_hw_events_on_cpu(void *hw_events)
-{
-	bool state;
-	unsigned hw_cnt, pmcs_cnt, pmc;
-	pmc_ctr reset_period;
-	struct pmcs_collection *pmcs_collection;
-
-	__save_and_disable_pmc_on_this_cpu(&state);
-
-	flush_and_clean_hw_events();
-
-	if (!hw_events) {
-		pr_warn("Cannot setup hw_events on cpu %u: hw_events is NULL\n",
-			smp_processor_id());
-		goto end;
-	}
-
-	hw_cnt = ((struct hw_events *)hw_events)->cnt;
-	pmcs_cnt = hw_cnt + gbl_nr_pmc_fixed;
-
-	pmcs_collection = this_cpu_read(pcpu_pmus_metadata.pmcs_collection);
-
-	/* Free old values */
-	if (pmcs_collection && pmcs_collection->cnt >= pmcs_cnt)
-		goto skip_alloc;
-
-	if (pmcs_collection)
-		kfree(pmcs_collection);
-
-	pmcs_collection = kzalloc(sizeof(struct pmcs_collection) +
-					  (sizeof(pmc_ctr) * pmcs_cnt),
-				  GFP_KERNEL);
-
-	if (!pmcs_collection) {
-		pr_warn("Cannot allocate memory for pmcs_collection on cpu %u\n",
-			smp_processor_id());
-		goto end;
-	}
-
-	pmcs_collection->complete = false;
-	pmcs_collection->cnt = pmcs_cnt;
-	pmcs_collection->mask = ((struct hw_events *)hw_events)->mask;
-
-	/* Update the new pmcs_collection value */
-	this_cpu_write(pcpu_pmus_metadata.pmcs_collection, pmcs_collection);
-
-skip_alloc:
-	/* Update hw_events */
-	this_cpu_write(pcpu_pmus_metadata.pmi_partial_cnt, 0);
-	this_cpu_write(pcpu_pmus_metadata.hw_events_index, 0);
-	this_cpu_write(pcpu_pmus_metadata.hw_events, hw_events);
-
-	/* Update pmc index array */
-	update_events_index_on_this_cpu(hw_events);
-
-	if (hw_cnt <= gbl_nr_pmc_general) {
-		reset_period = gbl_reset_period;
-	} else {
-		reset_period =
-			gbl_reset_period / ((hw_cnt / gbl_nr_pmc_general) + 1);
-	}
-
-	reset_period = PMC_TRIM(~reset_period);
-
-	this_cpu_write(pcpu_pmus_metadata.pmi_reset_value, reset_period);
-	pr_debug("[%u] Reset period set: %llx - Multiplexing time: %u\n",
-		 smp_processor_id(), reset_period,
-		 (hw_cnt / gbl_nr_pmc_general) + 1);
-
-	fast_setup_general_pmc_on_cpu(smp_processor_id(),
-				      ((struct hw_events *)hw_events)->cfgs, 0,
-				      hw_cnt);
-
-	for_each_fixed_pmc (pmc)
-		WRITE_FIXED_PMC(pmc, 0);
-
-	WRITE_FIXED_PMC(gbl_fixed_pmc_pmi,
-			this_cpu_read(pcpu_pmus_metadata.pmi_reset_value));
-
-end:
-	__restore_and_enable_pmc_on_this_cpu(&state);
-}
-
-int setup_hw_events_on_system(pmc_evt_code *hw_events_codes, unsigned cnt)
-{
-	u64 mask;
-	unsigned b, i;
-	struct hw_events *hw_events;
-
-	if (gbl_nr_hw_events == MAX_HW_EVENTS) {
-		pr_warn("Cannot register more hw_events sets\n");
-		return -ENOBUFS;
-	}
-
-	pr_debug("Expected %u he_events_codes\n", cnt);
-
-	if (!hw_events_codes || !cnt) {
-		pr_warn("Invalid hw_events. Cannot proceed with setup\n");
-		return -EINVAL;
-	}
-
-	mask = compute_hw_events_mask(hw_events_codes, cnt);
-
-	/* Check if the mask is already registered */
-	for (i = 0; i < gbl_nr_hw_events; ++i) {
-		if (gbl_hw_events[i]->mask == mask) {
-			pr_debug("Mask %llx is already used. Just setup\n",
-				 mask);
-			hw_events = gbl_hw_events[i];
-			goto setup_done;
-		}
-	}
-
-	hw_events = kzalloc(sizeof(struct hw_events) +
-				    (sizeof(struct pmc_evt_sel) * cnt),
-			    GFP_KERNEL);
-
-	if (!hw_events) {
-		pr_warn("Cannot allocate memory for hw_events\n");
-		return -ENOMEM;
-	}
-
-	/* Remove duplicates */
-	for (i = 0, b = 0; b < 64; ++b) {
-		if (!(mask & BIT(b)))
-			continue;
-
-		hw_events->cfgs[i].perf_evt_sel = HW_EVENTS_BITS[b].raw;
-		/* PMC setup */
-		hw_events->cfgs[i].usr = !!(params_cpl_usr);
-		hw_events->cfgs[i].os = !!(params_cpl_os);
-		hw_events->cfgs[i].pmi = 0;
-		hw_events->cfgs[i].en = 1;
-		pr_debug("Configure HW_EVENT %llx\n",
-			 hw_events->cfgs[i].perf_evt_sel);
-		++i;
-	}
-
-	hw_events->cnt = i;
-	hw_events->mask = mask;
-
-	gbl_hw_events[gbl_nr_hw_events++] = hw_events;
-
-setup_done:
-	pr_info("HW_MASK: %llx\n", hw_events->mask);
-	on_each_cpu(setup_hw_events_on_cpu, hw_events, 1);
-
-	return 0;
-}
-
 static void __init_pmu_on_cpu(void *pmcs_fixed)
 {
 #ifndef CONFIG_RUNNING_ON_VM
@@ -405,9 +193,17 @@ static void __init_pmu_on_cpu(void *pmcs_fixed)
 	wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL,
 	       this_cpu_read(pcpu_pmus_metadata.fixed_ctrl));
 
-	/* Assign the memoery for the fixed PMCs snapshot */
+	/* Assign the memory for the fixed PMCs snapshot */
 	this_cpu_write(pcpu_pmus_metadata.pmcs_fixed,
 		       pmcs_fixed + (smp_processor_id() * gbl_nr_pmc_fixed));
+
+	/* Assign here the memory for the per-cpu pmc-collection */
+	this_cpu_write(
+		pcpu_pmus_metadata.pmcs_collection,
+		kzalloc(sizeof(struct pmcs_collection) +
+				(sizeof(pmc_ctr) * MAX_PARALLEL_HW_EVENTS),
+			GFP_KERNEL));
+
 #else
 	pr_warn("CONFIG_RUNNING_ON_VM is enabled. PMCs are ignored\n");
 #endif
@@ -465,32 +261,9 @@ void cleanup_pmc_on_system(void)
 
 	/* TODO - Check if we need a delay */
 	/* TODO - pcpu_metadata keeps a NULL ref */
-	while (gbl_nr_hw_events) {
-		kfree(gbl_hw_events[gbl_nr_hw_events--]);
+	while (gbl_nr_hw_evts_groups) {
+		kfree(gbl_hw_evts_groups[gbl_nr_hw_evts_groups--]);
 	}
-}
-
-u64 compute_hw_events_mask(pmc_evt_code *hw_events_codes, unsigned cnt)
-{
-	u64 mask = 0;
-	unsigned evt, bit;
-
-	for (evt = 0; evt < cnt; ++evt) {
-		bit = 0;
-		while (HW_EVENTS_BITS[bit].raw) {
-			/* TODO - Convert into bitmap */
-			if (hw_events_codes[evt].raw ==
-			    HW_EVENTS_BITS[bit].raw) {
-				pr_debug("Found HW_EVT %x\n",
-					 hw_events_codes[evt].raw);
-				mask |= BIT(bit);
-				break;
-			}
-			bit++;
-		}
-	}
-
-	return mask;
 }
 
 void update_reset_period_on_system(u64 reset_period)

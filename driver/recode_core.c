@@ -87,7 +87,7 @@ int recode_pmc_init(void)
 
 	recode_tma_init();
 
-	on_each_cpu(setup_hw_events_on_cpu, gbl_hw_events[0], 1);
+	on_each_cpu(setup_hw_events_on_cpu, gbl_hw_evts_groups[0], 1);
 
 	return err;
 no_cfgs:
@@ -177,6 +177,8 @@ static void on_context_switch_callback(struct task_struct *prev, bool prev_on,
 		goto end;
 	}
 
+	// per_cpu(pcpu_pmus_metadata.has_ctx_switch, cpu) = true;
+
 	/* TODO - Think aobut enabling or not the sampling in CTX_SWITCH */
 
 	// if (!prev_on) {
@@ -212,7 +214,8 @@ void pmi_function(unsigned cpu)
 
 	atomic_inc(&active_pmis);
 
-	pmcs_collection = get_pmcs_collection_on_this_cpu();
+	/* pmcs_collection should be corrent as long as it accessed here */
+	pmcs_collection = this_cpu_read(pcpu_pmus_metadata.pmcs_collection);
 
 	if (unlikely(!pmcs_collection)) {
 		pr_debug("Got a NULL COLLECTION inside PMI\n");
@@ -224,32 +227,60 @@ void pmi_function(unsigned cpu)
 		goto skip;
 	}
 
-	dc_sample = get_write_dc_sample(
-		per_cpu(pcpu_data_collector, cpu),
-		per_cpu(pcpu_pmus_metadata.hw_events, cpu)->cnt +
-			gbl_nr_pmc_fixed);
+	// /* Get a sample crafted ad-hoc to fit the current hw_events */
+	// dc_sample = get_write_dc_sample(
+	// 	per_cpu(pcpu_data_collector, cpu),
+	// 	per_cpu(pcpu_pmus_metadata.hw_events, cpu)->cnt +
+	// 		gbl_nr_pmc_fixed);
+
+	// if (unlikely(!dc_sample)) {
+	// 	pr_debug("Got a NULL WR SAMPLE inside PMI\n");
+	// 	goto skip;
+	// }
+
+	/* Collect the raw pmcs values */
+	// memcpy(&dc_sample->pmcs, pmcs_collection,
+	//        sizeof(struct pmcs_collection) +
+	// 	       (sizeof(pmc_ctr) * pmcs_collection->cnt));
+
+	u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
+
+	dc_sample = get_sample_and_compute_tma(pmcs_collection, mask, cpu);
+
+	/* Get a sample crafted ad-hoc to fit the current hw_events */
+	// dc_sample = get_write_dc_sample(
+	// 	per_cpu(pcpu_data_collector, cpu),
+	// 	per_cpu(pcpu_pmus_metadata.hw_events, cpu)->cnt +
+	// 		gbl_nr_pmc_fixed);
 
 	if (unlikely(!dc_sample)) {
 		pr_debug("Got a NULL WR SAMPLE inside PMI\n");
 		goto skip;
 	}
 
-	memcpy(dc_sample->pmcs.pmcs, pmcs_collection,
-	       sizeof(struct pmcs_collection) +
-		       (sizeof(pmc_ctr) * pmcs_collection->cnt));
-
 	dc_sample->id = current->pid;
 	dc_sample->tracked = true;
 	dc_sample->k_thread = !current->mm;
 
+	dc_sample->system_tsc = rdtsc_ordered();
+	dc_sample->core_cycles = pmcs_collection->pmcs[1];
+	dc_sample->core_cycles_tsc_ref = pmcs_collection->pmcs[2];
+	// dc_sample->ctx_evts = per_cpu(pcpu_pmus_metadata.ctx_evts, cpu);
+
+	/* get_sample_and_compute_tma calls get_write_dc_sample */
+	put_write_dc_sample(per_cpu(pcpu_data_collector, cpu));
+
 	pr_debug("SAMPLE: ");
-	for (k = 0; k < gbl_nr_pmc_fixed; ++k) {
+	for (k = 0; k < dc_sample->pmcs.cnt; ++k) {
 		pr_cont("%llu ", pmcs_collection->pmcs[k]);
 	}
-	pr_cont(" - ");
-	for (k = gbl_nr_pmc_fixed; k < pmcs_collection->cnt; ++k) {
-		pr_cont("%llu ", pmcs_collection->pmcs[k]);
-	}
+	// for (k = 0; k < gbl_nr_pmc_fixed; ++k) {
+	// 	pr_cont("%llu ", pmcs_collection->pmcs[k]);
+	// }
+	// pr_cont(" - ");
+	// for (k = gbl_nr_pmc_fixed; k < pmcs_collection->cnt; ++k) {
+	// 	pr_cont("%llu ", pmcs_collection->pmcs[k]);
+	// }
 	pr_cont("\n");
 
 	/* Compute TMAM */
@@ -260,15 +291,11 @@ void pmi_function(unsigned cpu)
 
 	//u64 metrics[] = {L0_BS, L0_FB};
 	//u32 metrics_size = 2;
-	u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
+	// u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
 	//check_tma(metrics_size, metrics, mask);
-	compute_tma(pmcs_collection, mask, cpu);
+	// compute_tma(pmcs_collection, mask, cpu);
 
 	//pr_debug("aaaa\n");
-
-	//
-
-	put_write_dc_sample(per_cpu(pcpu_data_collector, cpu));
 
 skip:
 	atomic_dec(&active_pmis);

@@ -113,10 +113,7 @@ bool pmc_multiplexing_on_pmi(unsigned cpu)
 			pmcs_general(pmcs_collection->pmcs)[pmc] *= scale;
 		}
 
-		// for_each_pmc (pmc, pmcs_collection->cnt) {
-		// 	pr_debug("pmc %u: %llx\n", pmc,
-		// 		 pmcs_collection->pmcs[pmc]);
-		// }
+		pmcs_collection->mask = hw_events->mask;
 
 		if (hw_events->cnt > gbl_nr_pmc_general)
 			req_hw_events = gbl_nr_pmc_general;
@@ -126,7 +123,7 @@ bool pmc_multiplexing_on_pmi(unsigned cpu)
 		/* Setup from  */
 		fast_setup_general_pmc_on_cpu(cpu, hw_events->cfgs, 0,
 					      req_hw_events);
-
+					      
 		per_cpu(pcpu_pmus_metadata.hw_events_index, cpu) = 0;
 		per_cpu(pcpu_pmus_metadata.pmi_partial_cnt, cpu) = 0;
 

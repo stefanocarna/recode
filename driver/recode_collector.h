@@ -8,7 +8,10 @@ struct data_collector_sample {
 	pid_t id;
 	unsigned tracked;
 	unsigned k_thread;
-	unsigned ctx_evt;
+	pmc_ctr system_tsc;
+	pmc_ctr core_cycles;
+	pmc_ctr core_cycles_tsc_ref;
+	// unsigned ctx_evts;
 	struct pmcs_collection pmcs;
 };
 
