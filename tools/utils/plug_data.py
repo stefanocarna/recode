@@ -3,6 +3,7 @@ import json
 import pandas as pd
 from .printer import *
 from .proc_reader import ProcCpuReader
+from .proc_reader import ProcCpuReaderTMA
 
 PLUGIN_NAME = "data"
 HELP_DESC = "Access and manipulate collected data"
@@ -42,6 +43,17 @@ def setParserArguments(parser):
         required=False,
         const=DEFAULT_DATA_FILE,
         help="Read and create a file (data.json) with data. You can specify the file's name by (F)",
+    )
+
+    plug_parser.add_argument(
+        "-etma",
+        "--extract-tma",
+        metavar="F",
+        nargs='?',
+        type=str,
+        required=False,
+        const=DEFAULT_DATA_FILE,
+        help="(TMA samples) Read and create a file (data.json) with data. You can specify the file's name by (F)",
     )
 
 
@@ -108,6 +120,43 @@ def action_extract(args):
     file.close()
 
 
+def action_extract_tma(args):
+
+    print("action_extract_tma - " + str(args))
+
+    if (args is None):
+        return
+
+    cpuList = []
+
+    file = open(args, "w")
+
+    for cpuFile in os.listdir(RECODE_PROC_CPUS_PATH):
+        pcr = ProcCpuReaderTMA(cpuFile)
+
+        rawDict = pcr.try_read()
+        if (rawDict is not None):
+            # labels = list(rawDict.keys())
+
+            df = pd.DataFrame(rawDict)
+            df = df.sort_values(by=["TSC"])
+            df = df.reset_index(drop=True)
+
+            result = df.to_json(orient="split")
+            parsed = json.loads(result)
+
+            cpuDict = {}
+            cpuDict["id"] = cpuFile
+            cpuDict["data"] = parsed
+            cpuList.append(cpuDict)
+
+        pcr.close()
+
+    file.write(json.dumps(cpuList, indent=4))
+    file.write("\n")
+    file.close()
+
+
 def validate_args(args):
     return args.command == PLUGIN_NAME
 
@@ -121,5 +170,8 @@ def compute(args):
 
     if args.extract:
         action_extract(args.extract)
+
+    if args.extract_tma:
+        action_extract_tma(args.extract_tma)
 
     return True

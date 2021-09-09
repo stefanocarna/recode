@@ -71,18 +71,31 @@ static int cpu_logger_seq_show(struct seq_file *m, void *v)
 	// time = pmcs->tsc / tsc_khz;
 	time = 0;
 
-	seq_printf(m, " %u |", dc_sample->id);
-	seq_printf(m, " %u ", dc_sample->tracked);
-	seq_printf(m, "- %u |", dc_sample->k_thread);
-	seq_printf(m, " %llu |", dc_sample->system_tsc);
+	// seq_printf(m, " %u |", dc_sample->id);
+	// seq_printf(m, " %u ", dc_sample->tracked);
+	// seq_printf(m, "- %u |", dc_sample->k_thread);
+	// seq_printf(m, " %llu |", dc_sample->system_tsc);
 	
-	seq_printf(m, " %llu ", dc_sample->tsc_cycles);
-	seq_printf(m, " %llu ", dc_sample->core_cycles);
-	seq_printf(m, "- %llu |", dc_sample->core_cycles_tsc_ref);
+	// seq_printf(m, " %llu ", dc_sample->tsc_cycles);
+	// seq_printf(m, " %llu ", dc_sample->core_cycles);
+	// seq_printf(m, "- %llu |", dc_sample->core_cycles_tsc_ref);
+
+	// // seq_printf(m, "- %u |", dc_sample->ctx_evts);
+
+	// seq_printf(m, " [%llx] - ", dc_sample->pmcs.mask);
+
+	seq_printf(m, "%u,", dc_sample->id);
+	seq_printf(m, "%u,", dc_sample->tracked);
+	seq_printf(m, "%u,", dc_sample->k_thread);
+	seq_printf(m, "%llu,", dc_sample->system_tsc);
+	
+	seq_printf(m, "%llu,", dc_sample->tsc_cycles);
+	seq_printf(m, "%llu,", dc_sample->core_cycles);
+	seq_printf(m, "%llu,", dc_sample->core_cycles_tsc_ref);
 
 	// seq_printf(m, "- %u |", dc_sample->ctx_evts);
 
-	seq_printf(m, " [%llx] - ", dc_sample->pmcs.mask);
+	seq_printf(m, "%llx", dc_sample->pmcs.mask);
 
 	for_each_pmc(pmc, dc_sample->pmcs.cnt)
 		seq_printf(m, ",%llu", dc_sample->pmcs.pmcs[pmc]);

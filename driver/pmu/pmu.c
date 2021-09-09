@@ -67,8 +67,6 @@ void fast_setup_general_pmc_on_cpu(unsigned cpu, struct pmc_evt_sel *pmc_cfgs,
 
 static void __enable_pmc_on_cpu(void *dummy)
 {
-	if (smp_processor_id() != 1)
-		return;
 	if (recode_state == OFF) {
 		pr_warn("Cannot enable pmc on cpu %u while Recode is OFF\n",
 			smp_processor_id());

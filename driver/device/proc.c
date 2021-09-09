@@ -8,7 +8,7 @@ void init_proc(void)
 
 	register_proc_cpus();
 	register_proc_frequency();
-	register_proc_hw_events();
+	register_proc_sample_info();
 	register_proc_processes();
 	register_proc_state();
 	register_proc_statistics();

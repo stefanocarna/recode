@@ -7,9 +7,9 @@
 #include "../pmu/hw_events.h"
 #include "../recode_config.h"
 
-#define DATA_HEADER "# PID,TRACKED,KTHREAD,CTX_EVTS,TIME,TSC,INST,CYCLES,TSC_CYCLES,*"
+#define DATA_HEADER "# PID,TRACKED,KTHREAD,CTX_EVTS,TIME,TSC,INST,CYCLES,TSC_CYCLES"
 
-static int sampling_hw_events_show(struct seq_file *m, void *v)
+static int sampling_sample_info_show(struct seq_file *m, void *v)
 {
 	unsigned k, i;
 
@@ -30,14 +30,14 @@ static int sampling_hw_events_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int hw_events_open(struct inode *inode, struct file *filp)
+static int sample_info_open(struct inode *inode, struct file *filp)
 {
-	return single_open(filp, sampling_hw_events_show, NULL);
+	return single_open(filp, sampling_sample_info_show, NULL);
 }
 
 #define MAX_USER_HW_EVENTS 32
 
-static ssize_t hw_events_write(struct file *filp, const char __user *buffer_user,
+static ssize_t sample_info_write(struct file *filp, const char __user *buffer_user,
 			    size_t count, loff_t *ppos)
 {
 	int err, i = 0;
@@ -61,18 +61,18 @@ static ssize_t hw_events_write(struct file *filp, const char __user *buffer_user
 	return count;
 }
 
-struct proc_ops hw_events_proc_fops = {
-	.proc_open = hw_events_open,
+struct proc_ops sample_info_proc_fops = {
+	.proc_open = sample_info_open,
 	.proc_read = seq_read,
-	.proc_write = hw_events_write,
+	.proc_write = sample_info_write,
 	.proc_release = single_release,
 };
 
-int register_proc_hw_events(void)
+int register_proc_sample_info(void)
 {
 	struct proc_dir_entry *dir;
 
-	dir = proc_create(GET_PATH("hw_events"), 0666, NULL, &hw_events_proc_fops);
+	dir = proc_create(GET_PATH("sample_info"), 0666, NULL, &sample_info_proc_fops);
 
 	return !dir;
 }

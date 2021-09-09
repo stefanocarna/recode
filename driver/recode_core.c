@@ -259,7 +259,7 @@ void pmi_function(unsigned cpu)
 	}
 
 	dc_sample->id = current->pid;
-	dc_sample->tracked = true;
+	dc_sample->tracked = query_tracker(current->pid);
 	dc_sample->k_thread = !current->mm;
 
 	dc_sample->system_tsc = per_cpu(pcpu_pmus_metadata.last_tsc, cpu);

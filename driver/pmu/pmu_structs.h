@@ -60,6 +60,9 @@ struct pmus_metadata {
 	pmc_ctr pmi_reset_value;
 	unsigned pmi_partial_cnt;
 
+	u64 sample_tsc;
+	pmc_ctr last_tsc;
+
 	unsigned hw_events_index;
 	struct hw_events *hw_events;
 	pmc_ctr *pmcs_fixed;

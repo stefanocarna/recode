@@ -161,10 +161,14 @@ DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
 	X_TMA_LEVELS_FORMULAS(l0_re, 2)                                        \
 	X_TMA_LEVELS_FORMULAS(l0_fb, 3)
 
-#define TMA_NR_L1_FORMULAS 2
+#define TMA_NR_L1_FORMULAS 6
 #define TMA_L1_FORMULAS                                                        \
-	X_TMA_LEVELS_FORMULAS(l1_mb, 0)                                        \
-	X_TMA_LEVELS_FORMULAS(l1_cb, 1)
+	X_TMA_LEVELS_FORMULAS(l0_bb, 0)                                        \
+	X_TMA_LEVELS_FORMULAS(l0_bs, 1)                                        \
+	X_TMA_LEVELS_FORMULAS(l0_re, 2)                                        \
+	X_TMA_LEVELS_FORMULAS(l0_fb, 3)                                        \
+	X_TMA_LEVELS_FORMULAS(l1_mb, 4)                                        \
+	X_TMA_LEVELS_FORMULAS(l1_cb, 5)
 
 #define TMA_NR_L2_FORMULAS 4
 #define TMA_L2_FORMULAS                                                        \
@@ -252,7 +256,7 @@ int recode_tma_init(void)
 	k = 0;
 	pmc_evt_code *TMA_HW_EVTS_LEVEL_1 =
 		kmalloc(sizeof(pmc_evt_code *) * 9, GFP_KERNEL);
-		
+
 	if (!TMA_HW_EVTS_LEVEL_1) {
 		pr_err("Cannot allocate memory for TMA_HW_EVTS_LEVEL_1\n");
 		return -ENOMEM;
@@ -277,7 +281,7 @@ int recode_tma_init(void)
 	k = 0;
 	pmc_evt_code *TMA_HW_EVTS_LEVEL_2 =
 		kmalloc(sizeof(pmc_evt_code *) * 6, GFP_KERNEL);
-		
+
 	if (!TMA_HW_EVTS_LEVEL_2) {
 		pr_err("Cannot allocate memory for TMA_HW_EVTS_LEVEL_2\n");
 		return -ENOMEM;
@@ -346,6 +350,7 @@ switch_tma_level(unsigned level)
 	this_cpu_write(pcpu_current_tma_lvl, level);
 }
 
+/* TODO - The mask is now replaced by the level, but this should be changed */
 struct data_collector_sample *
 get_sample_and_compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
 {
@@ -359,10 +364,10 @@ get_sample_and_compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
 					TMA_NR_L##level##_FORMULAS);           \
 	if (unlikely(!dc_sample)) {                                            \
 		pr_debug("Got a NULL WR SAMPLE inside PMI\n");                 \
-		return NULL;                                                        \
+		return NULL;                                                   \
 	}                                                                      \
 	dc_sample->pmcs.cnt = TMA_NR_L##level##_FORMULAS;                      \
-	dc_sample->pmcs.mask = mask
+	dc_sample->pmcs.mask = level
 
 #define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
 	dc_sample->pmcs.pmcs[idx] = tma_eval_##name(collection->pmcs);
