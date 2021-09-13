@@ -1,10 +1,12 @@
-import os
+from os import cpu_count
+from os.path import isfile, dirname, abspath
 from .cmd import cmd
 from .printer import *
 
 PLUGIN_NAME = "profiler"
 HELP_DESC = "Configure profiling activity"
 
+WRAPPER_PATH = dirname(dirname(abspath(__file__)))
 
 def setParserArguments(parser):
 
@@ -50,7 +52,7 @@ def setParserArguments(parser):
 
 def action_exec(prog, args, timeout, cpu, profile=True):
     wrapper = "wrapper"
-    if not os.path.isfile(wrapper):
+    if not isfile(wrapper):
         # Compile Wrapper
         cmd("make")
 
@@ -58,10 +60,12 @@ def action_exec(prog, args, timeout, cpu, profile=True):
         pr_warn("Invalid timeout (< 0). Ignore timeout")
         timeout = None
 
-    _cmd = ["./" + wrapper] if profile else []
+    print("ss", WRAPPER_PATH, timeout)
+
+    _cmd = [WRAPPER_PATH + "/" + wrapper] if profile else []
 
     if cpu is not None:
-        if cpu < 0 or cpu >= os.cpu_count():
+        if cpu < 0 or cpu >= cpu_count():
             pr_warn("Invalid cpu " + str(cpu) + ". Ignore cpu mask")
 
         else:

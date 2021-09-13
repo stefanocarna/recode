@@ -21,12 +21,8 @@
 #include "recode_collector.h"
 #include "recode_tma.h"
 
-DEFINE_PER_CPU(struct pmcs_snapshot, pcpu_pmcs_snapshot) = { 0 };
-DEFINE_PER_CPU(bool, pcpu_last_ctx_snapshot) = false;
-
 enum recode_state __read_mostly recode_state = OFF;
 
-DEFINE_PER_CPU(struct pmcs_snapshot, pcpu_pmc_snapshot_ctx);
 DEFINE_PER_CPU(struct data_logger *, pcpu_data_logger);
 
 void pmc_generate_snapshot(struct pmcs_snapshot *old_pmcs, bool pmc_off);
@@ -122,18 +118,17 @@ void recode_pmc_fini(void)
 	pr_info("PMI uninstalled\n");
 }
 
+/* Must be implemented */
 static void recode_reset_data(void)
 {
-	unsigned cpu;
+	// unsigned cpu;
 	// unsigned pmc;
 
-	for_each_online_cpu (cpu) {
-		// reset_logger(per_cpu(pcpu_data_logger, cpu));
-
+	// for_each_online_cpu (cpu) {
+			
 		/* TODO - Check when need to reset pcpu_pmcs_snapshot */
-
 		// for (pmc = 0; pmc <= gbl_nr_pmc_fixed; ++pmc)
-		// 	per_cpu(pcpu_pmcs_snapshot.fixed[pmc], cpu) = 0;
+		// 	per_cpu(pcpu_pmcs_snapshot, cpu) = 0;
 
 		// if (gbl_fixed_pmc_pmi <= gbl_nr_pmc_fixed)
 		// 	per_cpu(pcpu_pmcs_snapshot.fixed[gbl_fixed_pmc_pmi], cpu) =
@@ -141,7 +136,7 @@ static void recode_reset_data(void)
 
 		// for (pmc = 0; pmc < gbl_nr_pmc_general; ++pmc)
 		// 	per_cpu(pcpu_pmcs_snapshot.general[pmc], cpu) = 0;
-	}
+	// }
 }
 
 static void on_context_switch_callback(struct task_struct *prev, bool prev_on,
