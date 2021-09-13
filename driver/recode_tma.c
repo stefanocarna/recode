@@ -64,6 +64,7 @@ DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
 #define TMA_L0 (TMA_L0_BB | TMA_L0_BS | TMA_L0_FB | TMA_L0_RE)
 #define TMA_L1 (TMA_L1_CB | TMA_L1_MB)
 #define TMA_L2 (TMA_L2_L1B | TMA_L2_L2B | TMA_L2_L3B)
+#define TMA_L3 (TMA_L1 | TMA_L2)
 
 /* TMA formulas */
 
@@ -93,8 +94,8 @@ DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
 	 (tma_eval_l0_mid_total_slots(pmcs) + 1))
 
 #define tma_eval_l0_bb(pmcs)                                                   \
-	(SFACT -                                                               \
-	 (tma_eval_l0_fb(pmcs) + tma_eval_l0_bs(pmcs) + tma_eval_l0_re(pmcs)))
+	SUB_SAFE(SFACT, (tma_eval_l0_fb(pmcs) + tma_eval_l0_bs(pmcs) +         \
+			 tma_eval_l0_re(pmcs)))
 
 #define tma_eval_l1_mid_fuet(pmcs)                                             \
 	(EVT_IDX(pmcs, ea_2_ports_util) *                                      \
@@ -129,8 +130,8 @@ DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
 
 #define tma_eval_l2_l1b(pmcs)                                                  \
 	(SFACT *                                                               \
-	 (EVT_IDX(pmcs, ca_stalls_mem_any) -                                   \
-	  EVT_IDX(pmcs, ca_stalls_l1d_miss)) /                                 \
+	 (SUB_SAFE(EVT_IDX(pmcs, ca_stalls_mem_any),                           \
+		   EVT_IDX(pmcs, ca_stalls_l1d_miss))) /                       \
 	 (pmcs[evt_fix_clock_cycles] + 1))
 
 #define tma_eval_l2_l3b(pmcs)                                                  \
@@ -177,6 +178,19 @@ DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
 	X_TMA_LEVELS_FORMULAS(l2_l3b, 2)                                       \
 	X_TMA_LEVELS_FORMULAS(l2_dramb, 3)
 
+#define TMA_NR_L3_FORMULAS 10
+#define TMA_L3_FORMULAS                                                        \
+	X_TMA_LEVELS_FORMULAS(l0_bb, 0)                                        \
+	X_TMA_LEVELS_FORMULAS(l0_bs, 1)                                        \
+	X_TMA_LEVELS_FORMULAS(l0_re, 2)                                        \
+	X_TMA_LEVELS_FORMULAS(l0_fb, 3)                                        \
+	X_TMA_LEVELS_FORMULAS(l1_mb, 4)                                        \
+	X_TMA_LEVELS_FORMULAS(l1_cb, 5)                                        \
+	X_TMA_LEVELS_FORMULAS(l2_l1b, 6)                                       \
+	X_TMA_LEVELS_FORMULAS(l2_l2b, 7)                                       \
+	X_TMA_LEVELS_FORMULAS(l2_l3b, 8)                                       \
+	X_TMA_LEVELS_FORMULAS(l2_dramb, 9)
+
 static inline __attribute__((always_inline)) bool
 compute_tms_l0(const struct pmcs_collection *collection)
 {
@@ -187,8 +201,9 @@ compute_tms_l0(const struct pmcs_collection *collection)
 	pr_debug("L0_RE: %llu\n", tma_eval_l0_re(collection->pmcs));
 	pr_debug("L0_BB: %llu\n", tma_eval_l0_bb(collection->pmcs));
 
-	return tma_eval_l0_re(collection->pmcs) < 300 &&
-	       tma_eval_l0_bb(collection->pmcs) > 30;
+	//return tma_eval_l0_re(collection->pmcs) < 300 &&
+	//       tma_eval_l0_bb(collection->pmcs) > 30;
+	return tma_eval_l0_bb(collection->pmcs) > 200;
 }
 
 static inline __attribute__((always_inline)) bool
@@ -200,7 +215,9 @@ compute_tms_l1(const struct pmcs_collection *collection)
 	pr_debug("L1_MB: %llu\n", tma_eval_l1_mb(collection->pmcs));
 	pr_debug("L1_CB: %llu\n", tma_eval_l1_cb(collection->pmcs));
 
-	return false;
+	//return false;
+	return tma_eval_l0_bb(collection->pmcs) > 200 &&
+	       tma_eval_l1_mb(collection->pmcs) > 200;
 }
 
 static inline __attribute__((always_inline)) bool
@@ -218,6 +235,24 @@ compute_tms_l2(const struct pmcs_collection *collection)
 	return false;
 }
 
+static inline __attribute__((always_inline)) bool
+compute_tms_l3(const struct pmcs_collection *collection)
+{
+	pr_debug("L1_MB: %llu\n", tma_eval_l1_mb(collection->pmcs));
+	pr_debug("L1_CB: %llu\n", tma_eval_l1_cb(collection->pmcs));
+	pr_debug("L2_L1B: %llu\n", tma_eval_l2_l1b(collection->pmcs));
+	pr_debug("L2_L2B: %llu\n", tma_eval_l2_l2b(collection->pmcs));
+	pr_debug("L2_L3B: %llu\n", tma_eval_l2_l3b(collection->pmcs));
+	pr_debug("L2_DRAMB: %llu\n", tma_eval_l2_dramb(collection->pmcs));
+
+	return tma_eval_l0_bb(collection->pmcs) > 200 &&
+	       tma_eval_l1_mb(collection->pmcs) > 200 &&
+	       (tma_eval_l2_l1b(collection->pmcs) > 100 ||
+		tma_eval_l2_l2b(collection->pmcs) > 50 ||
+		tma_eval_l2_l3b(collection->pmcs) > 50 ||
+		tma_eval_l2_dramb(collection->pmcs) > 100);
+}
+
 struct tma_level {
 	// unsigned threshold;
 	unsigned prev;
@@ -227,7 +262,7 @@ struct tma_level {
 	pmc_evt_code *hw_evts;
 };
 
-#define TMA_MAX_LEVEL 3
+#define TMA_MAX_LEVEL 4
 struct tma_level gbl_tma_levels[TMA_MAX_LEVEL];
 
 int recode_tma_init(void)
@@ -274,7 +309,7 @@ int recode_tma_init(void)
 
 	gbl_tma_levels[1].hw_evts = TMA_HW_EVTS_LEVEL_1;
 	gbl_tma_levels[1].hw_cnt = k;
-	gbl_tma_levels[1].next = 2;
+	gbl_tma_levels[1].next = 3;
 	gbl_tma_levels[1].prev = 0;
 	gbl_tma_levels[1].compute = compute_tms_l1;
 
@@ -299,6 +334,39 @@ int recode_tma_init(void)
 	gbl_tma_levels[2].next = 2;
 	gbl_tma_levels[2].prev = 1;
 	gbl_tma_levels[2].compute = compute_tms_l2;
+
+
+	k = 0;
+	pmc_evt_code *TMA_HW_EVTS_LEVEL_3 =
+		kmalloc(sizeof(pmc_evt_code *) * 10, GFP_KERNEL);
+
+	if (!TMA_HW_EVTS_LEVEL_3) {
+		pr_err("Cannot allocate memory for TMA_HW_EVTS_LEVEL_3\n");
+		return -ENOMEM;
+	}
+
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(iund_core);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ur_retire_slots);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ui_any);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(im_recovery_cycles);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ea_exe_bound_0_ports);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ea_bound_on_stores);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ea_1_ports_util);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ea_2_ports_util);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ca_stalls_mem_any);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ca_stalls_l1d_miss);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ca_stalls_mem_any);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ca_stalls_l2_miss);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ca_stalls_l3_miss);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(l2_hit);
+	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(l1_pend_miss);
+
+	gbl_tma_levels[3].hw_evts = TMA_HW_EVTS_LEVEL_3;
+	gbl_tma_levels[3].hw_cnt = k;
+	gbl_tma_levels[3].next = 3;
+	gbl_tma_levels[3].prev = 1;
+	gbl_tma_levels[3].compute = compute_tms_l3;
+
 
 	for (k = 0; k < TMA_MAX_LEVEL; ++k) {
 		setup_hw_events_on_system(gbl_tma_levels[k].hw_evts,
@@ -384,33 +452,38 @@ get_sample_and_compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
 		generate_empty_sample(2);
 		TMA_L2_FORMULAS
 		break;
+	case 3:
+		generate_empty_sample(3);
+		TMA_L3_FORMULAS
+		break;
 	default:
 		pr_warn("Unrecognized TMA level %u\n", level);
 		return NULL;
 	}
 #undef X_TMA_LEVELS_FORMULAS
+	compute_tma(collection, mask, cpu);
 	return dc_sample;
 }
 
 void compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
 {
-	/* 
+	/*
 	* L0:
 	* 	- andiamo bene
 	* 	- andiamo male per BS o FB (non ci facciamo nulla)*
 	* 	- andiamo male per BB -> switch to L1
-	* 
+	*
 	* L1:
 	* 	- siamo Core Bound (non facciamo nulla) *
 	* 	- siamo Memory Bound -> switch to L2
-	* 
+	*
 	* L2:
 	* 	- siamo L1 bound -> STAY (andiamo male noi)
 	* 	- siamo L2 bound -> STAY (andiamo male noi) ? devo chiedere alle altre CPU
 	* 	- siamo L3 bound -> STAY & ASK
 	* 	- siamo DRAM bound -> STAY & ASK
-	* 
-	* 
+	*
+	*
 	*  *con SMT spento
 	*/
 

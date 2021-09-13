@@ -51,7 +51,8 @@ SAMPLE_HEADER = ["PID", "TRACKED", "KTHREAD", "TSC",
 
 MASK_HEADER = {0:  ["BB", "BS", "RE", "FB"],
                1:  ["BB", "BS", "RE", "FB", "MB", "CB"],
-               2:  ["L1B", "L2B", "L3B", "DRAMB"]}
+               2:  ["L1B", "L2B", "L3B", "DRAMB"],
+               3:  ["BB", "BS", "RE", "FB", "MB", "CB", "L1B", "L2B", "L3B", "DRAMB"]}
 
 MASK_HEADER_FULL = ["BB", "BS", "RE", "FB", "MB", "CB", "L1B", "L2B", "L3B", "DRAMB"]
 
