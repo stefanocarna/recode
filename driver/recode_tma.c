@@ -335,7 +335,6 @@ int recode_tma_init(void)
 	gbl_tma_levels[2].prev = 1;
 	gbl_tma_levels[2].compute = compute_tms_l2;
 
-
 	k = 0;
 	pmc_evt_code *TMA_HW_EVTS_LEVEL_3 =
 		kmalloc(sizeof(pmc_evt_code *) * 10, GFP_KERNEL);
@@ -366,7 +365,6 @@ int recode_tma_init(void)
 	gbl_tma_levels[3].next = 3;
 	gbl_tma_levels[3].prev = 1;
 	gbl_tma_levels[3].compute = compute_tms_l3;
-
 
 	for (k = 0; k < TMA_MAX_LEVEL; ++k) {
 		setup_hw_events_on_system(gbl_tma_levels[k].hw_evts,
@@ -467,26 +465,6 @@ get_sample_and_compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
 
 void compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
 {
-	/*
-	* L0:
-	* 	- andiamo bene
-	* 	- andiamo male per BS o FB (non ci facciamo nulla)*
-	* 	- andiamo male per BB -> switch to L1
-	*
-	* L1:
-	* 	- siamo Core Bound (non facciamo nulla) *
-	* 	- siamo Memory Bound -> switch to L2
-	*
-	* L2:
-	* 	- siamo L1 bound -> STAY (andiamo male noi)
-	* 	- siamo L2 bound -> STAY (andiamo male noi) ? devo chiedere alle altre CPU
-	* 	- siamo L3 bound -> STAY & ASK
-	* 	- siamo DRAM bound -> STAY & ASK
-	*
-	*
-	*  *con SMT spento
-	*/
-
 	unsigned level = this_cpu_read(pcpu_current_tma_lvl);
 
 	if (gbl_tma_levels[level].compute(collection)) {

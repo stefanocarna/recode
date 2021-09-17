@@ -54,7 +54,8 @@ MASK_HEADER = {0:  ["BB", "BS", "RE", "FB"],
                2:  ["L1B", "L2B", "L3B", "DRAMB"],
                3:  ["BB", "BS", "RE", "FB", "MB", "CB", "L1B", "L2B", "L3B", "DRAMB"]}
 
-MASK_HEADER_FULL = ["BB", "BS", "RE", "FB", "MB", "CB", "L1B", "L2B", "L3B", "DRAMB"]
+MASK_HEADER_FULL = ["BB", "BS", "RE", "FB",
+                    "MB", "CB", "L1B", "L2B", "L3B", "DRAMB"]
 
 
 class ProcCpuReaderTMA:
@@ -87,7 +88,8 @@ class ProcCpuReaderTMA:
             k = 0
             for i, w in enumerate(MASK_HEADER_FULL):
                 if w in MASK_HEADER[mask]:
-                    self.dictLines[MASK_HEADER_FULL[i]].append(int(values[offset + k]))
+                    self.dictLines[MASK_HEADER_FULL[i]].append(
+                        int(values[offset + k]))
                     k += 1
                 else:
                     self.dictLines[MASK_HEADER_FULL[i]].append(-1)
