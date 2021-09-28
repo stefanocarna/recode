@@ -1,12 +1,47 @@
 #!/bin/python3
 import argparse
-# from recode import plot
+import configparser
 
 import utils.plug_autotest as plug_autotest
 import utils.plug_module as plug_module
 import utils.plug_config as plug_config
 import utils.plug_profiler as plug_profiler
 import utils.plug_data as plug_data
+import utils.plug_network as plug_network
+
+PLUGINS = [plug_module, plug_config, plug_profiler, plug_data, plug_network]
+
+CONFIG_FILE = 'recode.ini'
+
+
+class RecodeConfig:
+    def __init__(self, file):
+        self.file = file
+        self.config = None
+        self._initConfig()
+
+    def _initConfig(self):
+        self.config = configparser.ConfigParser()
+        try:
+            with open(self.file) as f:
+                self.config.read_file(f)
+        except IOError:
+            None
+
+    """ If value is None -> REMOVE, if key exists -> UPDATE, else -> ADD"""
+    def update(self, key, value):
+        if not self.config.has_section('config'):
+            self.config.add_section('config')
+
+        self.config['config'][key] = value
+        try:
+            with open(CONFIG_FILE, 'w') as f:
+                self.config.write(f)
+        except IOError:
+            print("Error while writing " + self.file)
+
+    def read(self, key):
+        return self.config['config'][key]
 
 
 def parser_init():
@@ -15,20 +50,17 @@ def parser_init():
 
     subparser = parser.add_subparsers(help="commands", dest="command")
 
+    for p in PLUGINS:
+        p.setParserArguments(subparser)
+
     plug_autotest.setParserArguments(subparser)
-    plug_module.setParserArguments(subparser)
-    plug_config.setParserArguments(subparser)
-    plug_profiler.setParserArguments(subparser)
-    plug_data.setParserArguments(subparser)
 
     return parser
 
 
-def compute_plugins(args):
-    plug_module.compute(args)
-    plug_config.compute(args)
-    plug_profiler.compute(args)
-    plug_data.compute(args)
+def compute_plugins(args, config):
+    for p in PLUGINS:
+        p.compute(args, config)
 
 
 if __name__ == "__main__":
@@ -37,14 +69,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # if not check_recode():
-    #     print("Recode module not detected... Is it loaded?. Exit")
-    #     exit(0)
+    config = RecodeConfig(CONFIG_FILE)
 
-    cmdList = plug_autotest.compute(args)
+    cmdList = plug_autotest.compute(args, config)
 
     if len(cmdList):
         for cmd in cmdList:
-            compute_plugins(parser.parse_args(cmd))
+            compute_plugins(parser.parse_args(cmd), config)
     else:
-        compute_plugins(args)
+        compute_plugins(args, config)

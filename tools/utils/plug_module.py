@@ -114,7 +114,7 @@ def validate_args(args):
     return True
 
 
-def compute(args):
+def compute(args, config):
     if not validate_args(args):
         return False
 
