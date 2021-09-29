@@ -90,7 +90,7 @@ def validate_args(args):
     return args.command == PLUGIN_NAME
 
 
-def compute(args):
+def compute(args, config):
     if not validate_args(args):
         return False
 
