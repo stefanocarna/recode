@@ -12,11 +12,20 @@ EXTRA_CFLAGS +=	-std=gnu99					\
 		-Wno-declaration-after-statement		\
 		$(INCLUDES)
 
-.PHONY: modules modules_install clean insert debug remove reboot
+PLUGIN :=
+CFLAGS_MODULE := 
+
+ifeq ($(PLUGIN), TMA)
+	CFLAGS_MODULE += -DTMA_MODULE
+endif
+ifeq ($(PLUGIN), SECURITY)
+	CFLAGS_MODULE += -DSECURITY_MODULE
+endif
+
+.PHONY: modules modules_install clean insert debug remove reboot security tma
 
 
 modules:
-# 	@echo $(wildcard ./driver/*.c)
 	@$(MAKE) -w -C $(KROOT) M=$(PWD) modules
 
 modules_install:

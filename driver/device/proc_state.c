@@ -23,8 +23,13 @@ err:
 	return -1;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
+struct file_operations state_proc_fops = {
+    .write = state_write,
+#else
 struct proc_ops state_proc_fops = {
     .proc_write = state_write,
+#endif
 };
 
 

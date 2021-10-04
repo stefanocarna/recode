@@ -16,7 +16,15 @@ $(MODULE_NAME)-y := recode_config.o
 $(MODULE_NAME)-y += recode_core.o
 $(MODULE_NAME)-y += recode_collector.o
 $(MODULE_NAME)-y += recode_module.o
-$(MODULE_NAME)-y += recode_tma.o
+
+# Logic (use flag to define one logic at time)
+ifeq ($(findstring -DTMA_MODULE,$(CFLAGS_MODULE)),-DTMA_MODULE)
+$(MODULE_NAME)-y += logic/recode_tma.o
+endif
+ifeq ($(findstring -DSECURITY_MODULE,$(CFLAGS_MODULE)),-DSECURITY_MODULE)
+$(MODULE_NAME)-y += logic/recode_security.o
+$(MODULE_NAME)-y += device/proc_mitigations.o
+endif
 
 DEVICE_DIR 	:= device
 DEVICE_SOURCES 	:= $(wildcard $(DEVICE_DIR)/*.c)
@@ -41,12 +49,6 @@ obj-m := $(MODULE_NAME).o
 
 ECHO = echo
 
-# $(MODULE_NAME)-y += intel/pmu.o intel/pmi.o intel/pebs.o
-# ccflags-y := -I../include
-
-# $(MODULE_NAME)-y += haap_fops.o
-
-# EXTRA_CFLAGS=-I$(PWD)/../include
 
 .PHONY: modules modules_install clean insert debug remove reboot help
 

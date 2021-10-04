@@ -12,6 +12,10 @@ void init_proc(void)
 	register_proc_processes();
 	register_proc_state();
 	register_proc_statistics();
+
+#ifdef SECURITY_MODULE_ON
+	register_proc_mitigations();
+#endif
 }
 
 void fini_proc(void)

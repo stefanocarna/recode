@@ -99,4 +99,6 @@ u64 compute_hw_events_mask(pmc_evt_code *hw_events_codes, unsigned cnt);
 
 void update_reset_period_on_system(u64 reset_period);
 
+bool pmc_generate_collection(unsigned cpu);
+
 #endif /* _PMU_H */

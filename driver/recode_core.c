@@ -19,7 +19,41 @@
 #include "pmu/pmi.h"
 #include "recode_config.h"
 #include "recode_collector.h"
-#include "recode_tma.h"
+
+/* TODO - create a module */
+#ifdef TMA_MODULE_ON
+#include "logic/recode_tma.h"
+#endif
+#ifdef SECURITY_MODULE_ON
+#include "logic/recode_security.h"
+#endif
+
+bool dummy_on_state_change(enum recode_state state)
+{
+	return false;
+}
+
+void dummy_on_pmi(unsigned cpu, struct pmus_metadata *pmus_metadata)
+{
+	// Empty call
+}
+
+static void dummy_on_ctx(struct task_struct *prev, bool prev_on, bool curr_on)
+{
+	// Empty call
+}
+
+static void dummy_on_hw_events_change(struct hw_events *events)
+{
+	// Empty call
+}
+
+struct recode_callbacks recode_callbacks = {
+	.on_hw_events_change = dummy_on_hw_events_change,
+	.on_pmi = dummy_on_pmi,
+	.on_ctx = dummy_on_ctx,
+	.on_state_change = dummy_on_state_change,
+};
 
 enum recode_state __read_mostly recode_state = OFF;
 
@@ -81,8 +115,12 @@ int recode_pmc_init(void)
 
 	disable_pmc_on_system();
 
+#ifdef TMA_MODULE_ON
 	recode_tma_init();
-
+#endif
+#ifdef SECURITY_MODULE_ON
+	recode_security_init();
+#endif
 	on_each_cpu(setup_hw_events_on_cpu, gbl_hw_evts_groups[0], 1);
 
 	return err;
@@ -109,6 +147,13 @@ void recode_pmc_fini(void)
 
 	cleanup_pmc_on_system();
 
+#ifdef TMA_MODULE_ON
+	recode_tma_fini();
+#endif
+#ifdef SECURITY_MODULE_ON
+	recode_security_init();
+#endif
+
 	if (recode_pmi_vector == NMI) {
 		pmi_nmi_cleanup();
 	} else {
@@ -125,17 +170,17 @@ static void recode_reset_data(void)
 	// unsigned pmc;
 
 	// for_each_online_cpu (cpu) {
-			
-		/* TODO - Check when need to reset pcpu_pmcs_snapshot */
-		// for (pmc = 0; pmc <= gbl_nr_pmc_fixed; ++pmc)
-		// 	per_cpu(pcpu_pmcs_snapshot, cpu) = 0;
 
-		// if (gbl_fixed_pmc_pmi <= gbl_nr_pmc_fixed)
-		// 	per_cpu(pcpu_pmcs_snapshot.fixed[gbl_fixed_pmc_pmi], cpu) =
-		// 		PMC_TRIM(reset_period);
+	/* TODO - Check when need to reset pcpu_pmcs_snapshot */
+	// for (pmc = 0; pmc <= gbl_nr_pmc_fixed; ++pmc)
+	// 	per_cpu(pcpu_pmcs_snapshot, cpu) = 0;
 
-		// for (pmc = 0; pmc < gbl_nr_pmc_general; ++pmc)
-		// 	per_cpu(pcpu_pmcs_snapshot.general[pmc], cpu) = 0;
+	// if (gbl_fixed_pmc_pmi <= gbl_nr_pmc_fixed)
+	// 	per_cpu(pcpu_pmcs_snapshot.fixed[gbl_fixed_pmc_pmi], cpu) =
+	// 		PMC_TRIM(reset_period);
+
+	// for (pmc = 0; pmc < gbl_nr_pmc_general; ++pmc)
+	// 	per_cpu(pcpu_pmcs_snapshot.general[pmc], cpu) = 0;
 	// }
 }
 
@@ -147,30 +192,36 @@ static void on_context_switch_callback(struct task_struct *prev, bool prev_on,
 
 	switch (recode_state) {
 	case OFF:
-		disable_pmc_on_this_cpu(false);
+		disable_pmc_on_this_cpu(true);
 		goto end;
 	case IDLE:
 		prev_on = false;
 		fallthrough;
 	case SYSTEM:
 		enable_pmc_on_this_cpu(false);
+		prev_on = true;
 		break;
 	case TUNING:
+		fallthrough;
 	case PROFILE:
 		/* Toggle PMI */
 		if (!curr_on)
 			disable_pmc_on_this_cpu(false);
-		else {
-			pr_info("%u] Enabling PMCs for pid %u\n", cpu,
-				current->pid);
+		else
 			enable_pmc_on_this_cpu(false);
-		}
 		break;
 	default:
 		pr_warn("Invalid state on cpu %u... disabling PMCs\n", cpu);
 		disable_pmc_on_this_cpu(false);
 		goto end;
 	}
+
+	if (unlikely(!prev)) {
+		pr_warn("Called Context Switch Callback with NULL prev\n");
+		goto end;
+	}
+
+	recode_callbacks.on_ctx(prev, prev_on, curr_on);
 
 	// per_cpu(pcpu_pmus_metadata.has_ctx_switch, cpu) = true;
 
@@ -194,10 +245,6 @@ end:
 
 void pmi_function(unsigned cpu)
 {
-	unsigned k;
-	struct pmcs_collection *pmcs_collection;
-	struct data_collector_sample *dc_sample = NULL;
-
 	if (recode_state == OFF) {
 		pr_warn("Recode is OFF - This PMI shouldn't fire, ignoring\n");
 		return;
@@ -209,92 +256,8 @@ void pmi_function(unsigned cpu)
 
 	atomic_inc(&active_pmis);
 
-	/* pmcs_collection should be corrent as long as it accessed here */
-	pmcs_collection = this_cpu_read(pcpu_pmus_metadata.pmcs_collection);
+	recode_callbacks.on_pmi(cpu, per_cpu_ptr(&pcpu_pmus_metadata, cpu));
 
-	if (unlikely(!pmcs_collection)) {
-		pr_debug("Got a NULL COLLECTION inside PMI\n");
-		goto skip;
-	}
-
-	if (!per_cpu(pcpu_pmus_metadata.hw_events, cpu)) {
-		pr_debug("Got a NULL hw_events inside PMI\n");
-		goto skip;
-	}
-
-	// /* Get a sample crafted ad-hoc to fit the current hw_events */
-	// dc_sample = get_write_dc_sample(
-	// 	per_cpu(pcpu_data_collector, cpu),
-	// 	per_cpu(pcpu_pmus_metadata.hw_events, cpu)->cnt +
-	// 		gbl_nr_pmc_fixed);
-
-	// if (unlikely(!dc_sample)) {
-	// 	pr_debug("Got a NULL WR SAMPLE inside PMI\n");
-	// 	goto skip;
-	// }
-
-	/* Collect the raw pmcs values */
-	// memcpy(&dc_sample->pmcs, pmcs_collection,
-	//        sizeof(struct pmcs_collection) +
-	// 	       (sizeof(pmc_ctr) * pmcs_collection->cnt));
-
-	u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
-
-	dc_sample = get_sample_and_compute_tma(pmcs_collection, mask, cpu);
-
-	/* Get a sample crafted ad-hoc to fit the current hw_events */
-	// dc_sample = get_write_dc_sample(
-	// 	per_cpu(pcpu_data_collector, cpu),
-	// 	per_cpu(pcpu_pmus_metadata.hw_events, cpu)->cnt +
-	// 		gbl_nr_pmc_fixed);
-
-	if (unlikely(!dc_sample)) {
-		pr_debug("Got a NULL WR SAMPLE inside PMI\n");
-		goto skip;
-	}
-
-	dc_sample->id = current->pid;
-	dc_sample->tracked = query_tracker(current->pid);
-	dc_sample->k_thread = !current->mm;
-
-	dc_sample->system_tsc = per_cpu(pcpu_pmus_metadata.last_tsc, cpu);
-
-	dc_sample->tsc_cycles = per_cpu(pcpu_pmus_metadata.sample_tsc, cpu);
-	dc_sample->core_cycles = pmcs_collection->pmcs[1];
-	dc_sample->core_cycles_tsc_ref = pmcs_collection->pmcs[2];
-	// dc_sample->ctx_evts = per_cpu(pcpu_pmus_metadata.ctx_evts, cpu);
-
-	/* get_sample_and_compute_tma calls get_write_dc_sample */
-	put_write_dc_sample(per_cpu(pcpu_data_collector, cpu));
-
-	pr_debug("SAMPLE: ");
-	for (k = 0; k < dc_sample->pmcs.cnt; ++k) {
-		pr_cont("%llu ", pmcs_collection->pmcs[k]);
-	}
-	// for (k = 0; k < gbl_nr_pmc_fixed; ++k) {
-	// 	pr_cont("%llu ", pmcs_collection->pmcs[k]);
-	// }
-	// pr_cont(" - ");
-	// for (k = gbl_nr_pmc_fixed; k < pmcs_collection->cnt; ++k) {
-	// 	pr_cont("%llu ", pmcs_collection->pmcs[k]);
-	// }
-	pr_cont("\n");
-
-	/* Compute TMAM */
-	/*
-	 * u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
-	 * compute_tma(dc_sample, mask);
-	 */
-
-	//u64 metrics[] = {L0_BS, L0_FB};
-	//u32 metrics_size = 2;
-	// u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
-	//check_tma(metrics_size, metrics, mask);
-	// compute_tma(pmcs_collection, mask, cpu);
-
-	//pr_debug("aaaa\n");
-
-skip:
 	atomic_dec(&active_pmis);
 }
 
@@ -303,7 +266,7 @@ static void manage_pmu_state(void *dummy)
 	/* This is not precise */
 	this_cpu_write(pcpu_pmus_metadata.last_tsc, rdtsc_ordered());
 
-	on_context_switch_callback(NULL, false, query_tracker(current->pid));
+	on_context_switch_callback(NULL, false, query_tracker(current));
 }
 
 void recode_set_state(unsigned state)
@@ -313,6 +276,9 @@ void recode_set_state(unsigned state)
 
 	if (old_state == recode_state)
 		return;
+
+	if (recode_callbacks.on_state_change(state))
+		goto skip;
 
 	switch (state) {
 	case OFF:
@@ -331,12 +297,16 @@ void recode_set_state(unsigned state)
 	case SYSTEM:
 		pr_info("Recode ready for SYSTEM\n");
 		break;
+	case TUNING:
+		pr_info("Recode ready for TUNING\n");
+		break;
 	default:
 		pr_warn("Recode invalid state\n");
 		recode_state = old_state;
 		return;
 	}
 
+skip:
 	recode_reset_data();
 	on_each_cpu(manage_pmu_state, NULL, 0);
 
@@ -347,18 +317,18 @@ void recode_set_state(unsigned state)
 }
 
 /* Register thread for profiling activity  */
-int attach_process(pid_t id)
+int attach_process(struct task_struct *tsk)
 {
-	pr_info("Attaching process: %u\n", id);
-	tracker_add(id);
+	pr_info("Attaching process: [%u:%u]\n", tsk->tgid, tsk->pid);
+	tracker_add(tsk);
 	return 0;
 }
 
 /* Remove registered thread from profiling activity */
-void detach_process(pid_t id)
+void detach_process(struct task_struct *tsk)
 {
-	pr_info("Detaching process: %u\n", id);
-	tracker_del(id);
+	pr_info("Detaching process: [%u:%u]\n", tsk->tgid, tsk->pid);
+	tracker_del(tsk);
 }
 
 int register_ctx_hook(void)
@@ -367,6 +337,8 @@ int register_ctx_hook(void)
 
 	set_hook_callback(&on_context_switch_callback);
 	switch_hook_set_state_enable(true);
+
+	pr_info("Registered context_switch_callback\n");
 
 	return err;
 }

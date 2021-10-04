@@ -65,7 +65,8 @@ struct pmus_metadata {
 
 	unsigned hw_events_index;
 	struct hw_events *hw_events;
-	pmc_ctr *pmcs_fixed;
+	bool multiplexing;
+	pmc_ctr *hw_pmcs;
 	struct pmcs_collection *pmcs_collection;
 };
 

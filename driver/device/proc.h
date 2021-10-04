@@ -9,6 +9,7 @@
 #include <linux/sched/task.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
+#include <linux/version.h>
 
 #include "dependencies.h"
 
@@ -36,5 +37,8 @@ extern int register_proc_sample_info(void);
 extern int register_proc_processes(void);
 extern int register_proc_state(void);
 extern int register_proc_statistics(void);
+#ifdef SECURITY_MODULE_ON
+extern int register_proc_mitigations(void);
+#endif
 
 #endif /* _PROC_H */

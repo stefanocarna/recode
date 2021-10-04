@@ -1,4 +1,4 @@
-from os import cpu_count
+from os import chdir, cpu_count
 from os.path import isfile, dirname, abspath
 from .cmd import cmd
 from .printer import *
@@ -6,7 +6,14 @@ from .printer import *
 PLUGIN_NAME = "profiler"
 HELP_DESC = "Configure profiling activity"
 
+WD_PATH = dirname(dirname(dirname(abspath(__file__))))
 WRAPPER_PATH = dirname(dirname(abspath(__file__)))
+
+
+def init(wd_path):
+    global WD_PATH 
+    WD_PATH = wd_path
+
 
 def setParserArguments(parser):
 
@@ -60,8 +67,6 @@ def action_exec(prog, args, timeout, cpu, profile=True):
         pr_warn("Invalid timeout (< 0). Ignore timeout")
         timeout = None
 
-    print("ss", WRAPPER_PATH, timeout)
-
     _cmd = [WRAPPER_PATH + "/" + wrapper] if profile else []
 
     if cpu is not None:
@@ -76,6 +81,7 @@ def action_exec(prog, args, timeout, cpu, profile=True):
     if args is not None:
         _cmd = _cmd + args.split()
 
+    pr_info("Cwd: " + str(WD_PATH))
     pr_info("Exec: " + str(_cmd) + " @ " + str(timeout))
     out, err, ret = cmd(_cmd, timeOut=timeout)
 
@@ -93,6 +99,8 @@ def validate_args(args):
 def compute(args, config):
     if not validate_args(args):
         return False
+
+    chdir(WD_PATH)
 
     if args.exec:
         action_exec(args.exec, args.args, args.timeout, args.cpu)

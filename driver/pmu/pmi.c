@@ -22,7 +22,8 @@ static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 {
 	u64 global;
 	unsigned handled = 0;
-	unsigned cpu = get_cpu();
+	// unsigned cpu = get_cpu();
+	unsigned cpu = smp_processor_id();
 
 	/* Read the PMCs state */
 	rdmsrl(MSR_CORE_PERF_GLOBAL_STATUS, global);
@@ -49,7 +50,7 @@ static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 	 * request. 	 
 	 */
 
-	if (pmc_multiplexing_on_pmi(cpu))
+	if (pmc_access_on_pmi(cpu))
 		pmi_function(cpu);
 
 	handled++;
@@ -67,7 +68,7 @@ no_pmi:
 
 	wrmsrl(MSR_CORE_PERF_GLOBAL_OVF_CTRL, global);
 end:
-	put_cpu();
+	// put_cpu();
 
 	return handled;
 }

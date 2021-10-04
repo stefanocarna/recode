@@ -39,11 +39,19 @@ static ssize_t statistics_write(struct file *file,
 	return count;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
+struct file_operations statistics_proc_fops = {
+	.open = statistics_open,
+	.read = seq_read,
+	.release = single_release,
+	.write = statistics_write,
+#else
 struct proc_ops statistics_proc_fops = {
 	.proc_open = statistics_open,
 	.proc_read = seq_read,
 	.proc_release = single_release,
 	.proc_write = statistics_write,
+#endif
 };
 
 int register_proc_statistics(void)

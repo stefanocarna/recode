@@ -37,7 +37,7 @@ enum { __X_COUNTER__ = __COUNTER__ };
  * the its extendibility eaiser. However you should #define and #undef the 
  * X_HW_EVENTS symbol to implement the correct action.
  */
-#define HW_EVENTS                                                             \
+#define HW_EVENTS                                                              \
 	X_HW_EVENTS(im_recovery_cycles, evt_umask_cmask(0x0d, 0x01, 0))        \
 	X_HW_EVENTS(ui_any, evt_umask_cmask(0x0e, 0x01, 0))                    \
 	X_HW_EVENTS(iund_core, evt_umask_cmask(0x9c, 0x01, 0))                 \
@@ -51,7 +51,15 @@ enum { __X_COUNTER__ = __COUNTER__ };
 	X_HW_EVENTS(ca_stalls_l2_miss, evt_umask_cmask(0xa3, 0x05, 5))         \
 	X_HW_EVENTS(ca_stalls_l1d_miss, evt_umask_cmask(0xa3, 0x0c, 12))       \
 	X_HW_EVENTS(l2_hit, evt_umask_cmask(0xd1, 0x02, 0))                    \
-	X_HW_EVENTS(l1_pend_miss, evt_umask_cmask(0x48, 0x02, 0))
+	X_HW_EVENTS(l1_pend_miss, evt_umask_cmask(0x48, 0x02, 0))              \
+	/* New evets for security */                                           \
+	X_HW_EVENTS(l2_all_data, evt_umask_cmask(0x24, 0xe1, 0))               \
+	X_HW_EVENTS(l2_data_misses, evt_umask_cmask(0x24, 0x21, 0))            \
+	X_HW_EVENTS(l3_miss_data, evt_umask_cmask(0xb0, 0x10, 0))              \
+	X_HW_EVENTS(l2_wb, evt_umask_cmask(0xf0, 0x40, 0))                     \
+	X_HW_EVENTS(l2_in_all, evt_umask_cmask(0xf1, 0x07, 0))                 \
+	X_HW_EVENTS(tlb_page_walk, evt_umask_cmask(0x08, 0x01, 0))
+
 // X_HW_EVENTS(null, evt_umask_cmask(0, 0, 0))
 
 struct hw_event {

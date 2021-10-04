@@ -60,12 +60,19 @@ static ssize_t sample_info_write(struct file *filp, const char __user *buffer_us
 	// recode_stop_and_reset();
 	return count;
 }
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
+struct file_operations sample_info_proc_fops = {
+	.open = sample_info_open,
+	.read = seq_read,
+	.write = sample_info_write,
+	.release = single_release,
+#else
 struct proc_ops sample_info_proc_fops = {
 	.proc_open = sample_info_open,
 	.proc_read = seq_read,
 	.proc_write = sample_info_write,
 	.proc_release = single_release,
+#endif
 };
 
 int register_proc_sample_info(void)

@@ -8,7 +8,6 @@
 #include "pmu/pmu.h"
 #include "pmu/pmi.h"
 #include "pmu/hw_events.h"
-#include "recode_tma.h"
 
 DEFINE_PER_CPU(struct pmus_metadata, pcpu_pmus_metadata) = { 0 };
 
@@ -131,16 +130,16 @@ void debug_pmu_state(void)
 	unsigned pmc;
 	unsigned cpu = get_cpu();
 
-	pr_info("Init PMU debug on core %u\n", cpu);
+	pr_debug("Init PMU debug on core %u\n", cpu);
 
 	rdmsrl(MSR_CORE_PERF_GLOBAL_STATUS, msr);
-	pr_info("MSR_CORE_PERF_GLOBAL_STATUS: %llx\n", msr);
+	pr_debug("MSR_CORE_PERF_GLOBAL_STATUS: %llx\n", msr);
 
 	rdmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, msr);
-	pr_info("MSR_CORE_PERF_FIXED_CTR_CTRL: %llx\n", msr);
+	pr_debug("MSR_CORE_PERF_FIXED_CTR_CTRL: %llx\n", msr);
 
 	rdmsrl(MSR_CORE_PERF_GLOBAL_CTRL, msr);
-	pr_info("MSR_CORE_PERF_GLOBAL_CTRL: %llx\n", msr);
+	pr_debug("MSR_CORE_PERF_GLOBAL_CTRL: %llx\n", msr);
 
 	pr_debug("GP_sel 0: %llx\n", QUERY_GENERAL_PMC(0));
 	pr_debug("GP_sel 1: %llx\n", QUERY_GENERAL_PMC(1));
@@ -155,12 +154,12 @@ void debug_pmu_state(void)
 		pr_debug("GP_ctrl %u: %llx\n", pmc, READ_GENERAL_PMC(pmc));
 	}
 
-	pr_info("Fini PMU debug on core %u\n", cpu);
+	pr_debug("Fini PMU debug on core %u\n", cpu);
 
 	put_cpu();
 }
 
-static void __init_pmu_on_cpu(void *pmcs_fixed)
+static void __init_pmu_on_cpu(void *hw_pmcs)
 {
 #ifndef CONFIG_RUNNING_ON_VM
 	u64 msr;
@@ -192,8 +191,9 @@ static void __init_pmu_on_cpu(void *pmcs_fixed)
 	       this_cpu_read(pcpu_pmus_metadata.fixed_ctrl));
 
 	/* Assign the memory for the fixed PMCs snapshot */
-	this_cpu_write(pcpu_pmus_metadata.pmcs_fixed,
-		       pmcs_fixed + (smp_processor_id() * gbl_nr_pmc_fixed));
+	this_cpu_write(pcpu_pmus_metadata.hw_pmcs,
+		       hw_pmcs + (smp_processor_id() *
+				  (gbl_nr_pmc_fixed + gbl_nr_pmc_general)));
 
 	/* Assign here the memory for the per-cpu pmc-collection */
 	this_cpu_write(
@@ -211,16 +211,16 @@ int init_pmu_on_system(void)
 {
 	unsigned cpu, pmc;
 	u64 gbl_fixed_ctrl = 0;
-	pmc_ctr *pmcs_fixed;
+	pmc_ctr *hw_pmcs;
 	/* Compute fixed_ctrl */
 
 	pr_debug("num_possible_cpus: %u\n", num_possible_cpus());
 
 	/* TODO Free this memory */
-	pmcs_fixed = kzalloc(sizeof(pmc_ctr) * num_possible_cpus() *
-				     gbl_nr_pmc_fixed,
-			     GFP_KERNEL);
-	if (!pmcs_fixed) {
+	hw_pmcs = kzalloc(sizeof(pmc_ctr) * num_possible_cpus() *
+				  (gbl_nr_pmc_fixed + gbl_nr_pmc_general),
+			  GFP_KERNEL);
+	if (!hw_pmcs) {
 		pr_warn("Cannot allocate memory in init_pmu_on_system\n");
 		return -ENOMEM;
 	}
@@ -233,7 +233,6 @@ int init_pmu_on_system(void)
 		if (pmc == gbl_fixed_pmc_pmi) {
 			/* Set PMI */
 			gbl_fixed_ctrl |= (BIT(3) << (pmc * 4));
-			gbl_fixed_ctrl |= (BIT(0) << (pmc * 4));
 		}
 		if (params_cpl_usr)
 			gbl_fixed_ctrl |= (BIT(1) << (pmc * 4));
@@ -246,8 +245,9 @@ int init_pmu_on_system(void)
 	}
 
 	/* Metadata doesn't require initialization at the moment */
-	on_each_cpu(__init_pmu_on_cpu, pmcs_fixed, 1);
+	on_each_cpu(__init_pmu_on_cpu, hw_pmcs, 1);
 
+	pr_info("PMI set on fixed pmc %u\n", gbl_fixed_pmc_pmi);
 	pr_warn("PMUs initialized on all cores\n");
 	return 0;
 }
@@ -282,5 +282,7 @@ void update_reset_period_on_system(u64 reset_period)
 
 	pr_info("Updated gbl_reset_period to %llx\n", reset_period);
 
-	enable_pmc_on_system();
+	// TODO create a global state
+	if (recode_state != OFF)
+		enable_pmc_on_system();
 }

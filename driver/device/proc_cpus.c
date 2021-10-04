@@ -126,11 +126,19 @@ static int cpu_logger_open(struct inode *inode, struct file *filp)
 	return seq_open(filp, &cpu_logger_seq_ops);
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
+struct file_operations cpu_logger_proc_fops = {
+	.open = cpu_logger_open,
+	.llseek = seq_lseek,
+	.read = seq_read,
+	.release = seq_release,
+#else
 struct proc_ops cpu_logger_proc_fops = {
 	.proc_open = cpu_logger_open,
 	.proc_lseek = seq_lseek,
 	.proc_read = seq_read,
 	.proc_release = seq_release,
+#endif
 };
 
 int register_proc_cpus(void)

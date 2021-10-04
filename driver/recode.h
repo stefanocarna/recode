@@ -11,6 +11,12 @@
 #if __has_include(<asm/fast_irq.h>)
 #define FAST_IRQ_ENABLED 1
 #endif
+#if __has_include(<asm/fast_irq.h>) && defined(SECURITY_MODULE) 
+#define SECURITY_MODULE_ON 1
+#elif defined(TMA_MODULE) 
+#define TMA_MODULE_ON 1
+#endif
+
 
 #define MODNAME	"ReCode"
 
@@ -27,6 +33,15 @@ enum recode_state {
 
 extern enum recode_state __read_mostly recode_state;
 
+struct recode_callbacks {
+	void (*on_hw_events_change)(struct hw_events *events);
+	void (*on_pmi)(unsigned cpu, struct pmus_metadata *pmus_metadata);
+	void (*on_ctx)(struct task_struct *prev, bool prev_on,
+				       bool curr_on);
+	bool (*on_state_change)(enum recode_state);
+};
+
+extern struct recode_callbacks __read_mostly recode_callbacks;
 
 /* Recode module */
 extern int recode_data_init(void);
@@ -40,15 +55,12 @@ extern void recode_set_state(unsigned state);
 extern int register_ctx_hook(void);
 extern void unregister_ctx_hook(void);
 
-extern int attach_process(pid_t id);
-extern void detach_process(pid_t id);
+extern int attach_process(struct task_struct *tsk);
+extern void detach_process(struct task_struct *tsk);
 
 /* Recode PMI */
 extern void pmi_function(unsigned cpu);
 
 void setup_hw_events_from_proc(pmc_evt_code *hw_events_codes, unsigned cnt);
-
-/* Recode TMA */
-// extern void pmc_evaluate_tma(unsigned cpu, struct pmcs_snapshot *pmcs);
 
 #endif /* _RECODE_CORE_H */

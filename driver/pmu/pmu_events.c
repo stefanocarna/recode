@@ -5,15 +5,14 @@
 #include "pmu/pmu.h"
 #include "pmu/pmi.h"
 #include "pmu/hw_events.h"
-#include "recode_tma.h"
 
 /**
  * This macro creates an instance of struct hw_event for each hw_event present
  * inside HW_EVENTS. That struct is used to dynamically compute the mask of the
  * hw_events_set and other utility functions.
  */
-#define X_HW_EVENTS(name, code)                                               \
-	const struct hw_event hw_evt_##name = { .idx = CTR_HW_EVENTS,         \
+#define X_HW_EVENTS(name, code)                                                \
+	const struct hw_event hw_evt_##name = { .idx = CTR_HW_EVENTS,          \
 						.evt = { code } };
 HW_EVENTS
 #undef X_HW_EVENTS
@@ -51,32 +50,32 @@ void setup_hw_events_on_cpu(void *hw_events)
 
 	pmcs_collection = this_cpu_read(pcpu_pmus_metadata.pmcs_collection);
 
-// 	/* Free old values */
-// 	if (pmcs_collection && pmcs_collection->cnt >= pmcs_cnt)
-// 		goto skip_alloc;
+	// 	/* Free old values */
+	// 	if (pmcs_collection && pmcs_collection->cnt >= pmcs_cnt)
+	// 		goto skip_alloc;
 
-// 	if (pmcs_collection)
-// 		kfree(pmcs_collection);
+	// 	if (pmcs_collection)
+	// 		kfree(pmcs_collection);
 
-// 	pmcs_collection = kzalloc(sizeof(struct pmcs_collection) +
-// 					  (sizeof(pmc_ctr) * pmcs_cnt),
-// 				  GFP_KERNEL);
+	// 	pmcs_collection = kzalloc(sizeof(struct pmcs_collection) +
+	// 					  (sizeof(pmc_ctr) * pmcs_cnt),
+	// 				  GFP_KERNEL);
 
-// 	if (!pmcs_collection) {
-// 		pr_warn("Cannot allocate memory for pmcs_collection on cpu %u\n",
-// 			smp_processor_id());
-// 		goto end;
-// 	}
+	// 	if (!pmcs_collection) {
+	// 		pr_warn("Cannot allocate memory for pmcs_collection on cpu %u\n",
+	// 			smp_processor_id());
+	// 		goto end;
+	// 	}
 
-// 	pmcs_collection->complete = false;
-// 	pmcs_collection->cnt = pmcs_cnt;
-// 	pmcs_collection->mask = ((struct hw_events *)hw_events)->mask;
+	// 	pmcs_collection->complete = false;
+	// 	pmcs_collection->cnt = pmcs_cnt;
+	// 	pmcs_collection->mask = ((struct hw_events *)hw_events)->mask;
 
-// 	/* Update the new pmcs_collection value */
-// 	this_cpu_write(pcpu_pmus_metadata.pmcs_collection, pmcs_collection);
+	// 	/* Update the new pmcs_collection value */
+	// 	this_cpu_write(pcpu_pmus_metadata.pmcs_collection, pmcs_collection);
 
-// skip_alloc:
-	
+	// skip_alloc:
+
 	pmcs_collection->complete = false;
 	pmcs_collection->cnt = pmcs_cnt;
 	pmcs_collection->mask = ((struct hw_events *)hw_events)->mask;
@@ -85,15 +84,17 @@ void setup_hw_events_on_cpu(void *hw_events)
 	this_cpu_write(pcpu_pmus_metadata.pmi_partial_cnt, 0);
 	this_cpu_write(pcpu_pmus_metadata.hw_events_index, 0);
 	this_cpu_write(pcpu_pmus_metadata.hw_events, hw_events);
+	this_cpu_write(pcpu_pmus_metadata.multiplexing,
+		       hw_cnt > gbl_nr_pmc_general);
 
 	/* Update pmc index array */
-	update_events_index_on_this_cpu(hw_events);
+	recode_callbacks.on_hw_events_change(hw_events);
 
-	if (hw_cnt <= gbl_nr_pmc_general) {
-		reset_period = gbl_reset_period;
-	} else {
+	if (this_cpu_read(pcpu_pmus_metadata.multiplexing)) {
 		reset_period =
 			gbl_reset_period / ((hw_cnt / gbl_nr_pmc_general) + 1);
+	} else {
+		reset_period = gbl_reset_period;
 	}
 
 	reset_period = PMC_TRIM(~reset_period);

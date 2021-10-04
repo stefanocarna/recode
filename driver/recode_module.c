@@ -7,6 +7,13 @@
 static __init int recode_init(void)
 {
 	pr_debug("Mounting with DEBUG enabled\n");
+
+#ifdef TMA_MODULE_ON
+	pr_info("Mounting with TMA module\n");
+#endif
+#ifdef SECURITY_MODULE_ON
+	pr_info("Mounting with SECURITY module\n");
+#endif
 	
 	if(recode_data_init()) {
 		pr_err("Cannot initialize data\n");

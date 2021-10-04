@@ -28,10 +28,11 @@ static ssize_t processes_write(struct file *file,
 		goto err;
 	}
 
-        attach_process(ts->pid);
+        attach_process(ts);
 
 // end:
 	put_task_struct(ts);
+	// TODO - Release pid memory
 	return count;
 
 // no_task:
@@ -39,8 +40,13 @@ err:
 	return -1;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
+struct file_operations processes_proc_fops = {
+    .write = processes_write,
+#else
 struct proc_ops processes_proc_fops = {
     .proc_write = processes_write,
+#endif
 };
 
 

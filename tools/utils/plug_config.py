@@ -38,6 +38,18 @@ def setParserArguments(parser):
         help="Get current Recode configuration",
     )
 
+    """ Enabled only with security module """
+    plug_parser.add_argument(
+        "-m",
+        "--mitigations",
+        type=str,
+        nargs='+',
+        metavar="CONF",
+        choices=["te", "exile", "llc", "verbose", "none"],
+        required=False,
+        help="Configure the module",
+    )
+
 
 def action_state(action):
     path = RECODE_PROC_PATH + "/state"
@@ -99,6 +111,37 @@ def action_info():
     pr_text(" - thresholds:\t" + get_info("thresholds"))
 
 
+def action_mitigations(mitigations):
+    
+    path = RECODE_PROC_PATH + "/mitigations"
+
+    _file = open(path, "w")
+
+    mask = 0
+
+    #define DM_G_LLC_FLUSH			0	
+    #define DM_G_CPU_EXILE			1	
+    #define DM_G_TE_MITIGATE		2
+    #define DM_G_VERBOSE			18	
+
+    if "llc" in mitigations:
+        mask |= (1 << 0)
+    if "exile" in mitigations:
+        mask |= (1 << 1)
+    if "te" in mitigations:
+        mask |= (1 << 2)
+    if "verbose" in mitigations:
+        mask |= (1 << 18)
+    if "none" in mitigations:
+        mask = 0
+
+    print(hex(mask))
+
+    _file.write(str(mask))
+    _file.flush()
+    _file.close()
+
+
 def validate_args(args):
     return args.command == PLUGIN_NAME
 
@@ -115,5 +158,8 @@ def compute(args, config):
 
     if args.info:
         action_info()
+
+    if args.mitigations:
+        action_mitigations(args.mitigations)
 
     return True

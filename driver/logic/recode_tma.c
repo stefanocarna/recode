@@ -1,8 +1,12 @@
 /* test */
 #include <linux/slab.h>
+#include <linux/sched.h>
+
+#include "dependencies.h"
 
 #include "pmu/hw_events.h"
 #include "recode_tma.h"
+#include "recode.h"
 
 DEFINE_PER_CPU(u8[NR_HW_EVENTS], pcpu_pmcs_index_array);
 DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
@@ -366,12 +370,22 @@ int recode_tma_init(void)
 	gbl_tma_levels[3].prev = 1;
 	gbl_tma_levels[3].compute = compute_tms_l3;
 
+	/* Setup recode callbacks */
+	/* NOTE - This will be chnaged into a function */
+	recode_callbacks.on_pmi = on_pmi_callback; 
+	recode_callbacks.on_hw_events_change = update_events_index_on_this_cpu; 
+
 	for (k = 0; k < TMA_MAX_LEVEL; ++k) {
 		setup_hw_events_on_system(gbl_tma_levels[k].hw_evts,
 					  gbl_tma_levels[k].hw_cnt);
 	}
 
 	return 0;
+}
+
+void recode_tma_fini(void)
+{
+	// TODO implement
 }
 
 void check_tma(u32 metrics_size, u64 metrics[], u64 mask)
@@ -414,6 +428,17 @@ switch_tma_level(unsigned level)
 	/* TODO - This must be atomic */
 	setup_hw_events_on_cpu(gbl_hw_evts_groups[level]);
 	this_cpu_write(pcpu_current_tma_lvl, level);
+}
+
+static void compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
+{
+	unsigned level = this_cpu_read(pcpu_current_tma_lvl);
+
+	if (gbl_tma_levels[level].compute(collection)) {
+		switch_tma_level(gbl_tma_levels[level].next);
+	} else {
+		switch_tma_level(gbl_tma_levels[level].prev);
+	}
 }
 
 /* TODO - The mask is now replaced by the level, but this should be changed */
@@ -463,13 +488,58 @@ get_sample_and_compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
 	return dc_sample;
 }
 
-void compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
-{
-	unsigned level = this_cpu_read(pcpu_current_tma_lvl);
+void on_pmi_callback(unsigned cpu, struct pmus_metadata *pmus_metadata) {
 
-	if (gbl_tma_levels[level].compute(collection)) {
-		switch_tma_level(gbl_tma_levels[level].next);
-	} else {
-		switch_tma_level(gbl_tma_levels[level].prev);
+	unsigned k;
+	struct pmcs_collection *pmcs_collection;
+	struct data_collector_sample *dc_sample = NULL;
+
+	/* pmcs_collection should be corrent as long as it accessed here */
+	pmcs_collection = pmus_metadata->pmcs_collection;
+
+	if (unlikely(!pmcs_collection)) {
+		pr_debug("Got a NULL COLLECTION inside PMI\n");
+		return;
 	}
+
+	if (!per_cpu(pcpu_pmus_metadata.hw_events, cpu)) {
+		pr_debug("Got a NULL hw_events inside PMI\n");
+		return;
+	}
+
+	u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
+
+	dc_sample = get_sample_and_compute_tma(pmcs_collection, mask, cpu);
+
+	if (unlikely(!dc_sample)) {
+		pr_debug("Got a NULL WR SAMPLE inside PMI\n");
+		return;
+	}
+
+	dc_sample->id = current->pid;
+	dc_sample->tracked = query_tracker(current->pid);
+	dc_sample->k_thread = !current->mm;
+
+	dc_sample->system_tsc = per_cpu(pcpu_pmus_metadata.last_tsc, cpu);
+
+	dc_sample->tsc_cycles = per_cpu(pcpu_pmus_metadata.sample_tsc, cpu);
+	dc_sample->core_cycles = pmcs_collection->pmcs[1];
+	dc_sample->core_cycles_tsc_ref = pmcs_collection->pmcs[2];
+	// dc_sample->ctx_evts = per_cpu(pcpu_pmus_metadata.ctx_evts, cpu);
+
+	/* get_sample_and_compute_tma calls get_write_dc_sample */
+	put_write_dc_sample(per_cpu(pcpu_data_collector, cpu));
+
+	pr_debug("SAMPLE: ");
+	for (k = 0; k < dc_sample->pmcs.cnt; ++k) {
+		pr_cont("%llu ", pmcs_collection->pmcs[k]);
+	}
+	// for (k = 0; k < gbl_nr_pmc_fixed; ++k) {
+	// 	pr_cont("%llu ", pmcs_collection->pmcs[k]);
+	// }
+	// pr_cont(" - ");
+	// for (k = gbl_nr_pmc_fixed; k < pmcs_collection->cnt; ++k) {
+	// 	pr_cont("%llu ", pmcs_collection->pmcs[k]);
+	// }
+	pr_cont("\n");
 }
