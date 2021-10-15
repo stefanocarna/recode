@@ -8,36 +8,31 @@
 static ssize_t processes_write(struct file *file,
 		const char __user *buffer, size_t count, loff_t *ppos)
 {
-	int err;
+	int ret;
 	struct task_struct *ts;
-	pid_t *pidp;
+	pid_t pidp;
 
-	pidp = vmalloc(sizeof(pid_t));
-	if (!pidp) goto err;
-
-	err = kstrtoint_from_user(buffer, count, 0, pidp);
-	if (err) {
-		pr_info("Pid buffer err\n");
-		goto err;
+	if (kstrtoint_from_user(buffer, count, 0, &pidp)) {
+		ret = -EFAULT;
+		goto skip;
 	}
 
         /* Retrieve pid task_struct */
-	ts = get_pid_task(find_get_pid(*pidp), PIDTYPE_PID);
+	ts = get_pid_task(find_get_pid(pidp), PIDTYPE_PID);
 	if (!ts) {
-		pr_info("Cannot find task_struct for pid %u\n", *pidp);
-		goto err;
+		pr_info("Cannot find task_struct for pid %u\n", pidp);
+		ret = -EINVAL;
+		goto skip;
 	}
 
         attach_process(ts);
 
-// end:
 	put_task_struct(ts);
-	// TODO - Release pid memory
-	return count;
 
-// no_task:
-err:
-	return -1;
+	ret = count;
+
+skip:
+	return ret;
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)

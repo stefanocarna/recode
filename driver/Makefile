@@ -24,6 +24,9 @@ endif
 ifeq ($(findstring -DSECURITY_MODULE,$(CFLAGS_MODULE)),-DSECURITY_MODULE)
 $(MODULE_NAME)-y += logic/recode_security.o
 $(MODULE_NAME)-y += device/proc_mitigations.o
+$(MODULE_NAME)-y += device/proc_thresholds.o
+$(MODULE_NAME)-y += device/proc_security.o
+$(MODULE_NAME)-y += device/proc_statistics.o
 endif
 
 DEVICE_DIR 	:= device
@@ -43,7 +46,6 @@ $(MODULE_NAME)-y += device/proc_frequency.o
 $(MODULE_NAME)-y += device/proc_sample_info.o
 $(MODULE_NAME)-y += device/proc_processes.o
 $(MODULE_NAME)-y += device/proc_state.o
-$(MODULE_NAME)-y += device/proc_statistics.o
 
 obj-m := $(MODULE_NAME).o
 

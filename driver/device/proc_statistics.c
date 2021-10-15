@@ -4,9 +4,11 @@
 
 #include "proc.h"
 
+#include "logic/recode_security.h"
+
 static int sampling_statistics_show(struct seq_file *m, void *v)
 {
-	// seq_printf(m, "%d\n", atomic_read(&generated_pmis));
+	seq_printf(m, "%d\n", atomic_read(&detected_theads));
 
 	return 0;
 }
@@ -32,8 +34,10 @@ static ssize_t statistics_write(struct file *file,
 
 	pname[n] = '\0';
 
-	pr_info("*** *** *** *** *** *** ***\n");
 	pr_info("*** Running BENCH: %s\n", pname);
+
+	/* Reset internal stats */
+	atomic_set(&detected_theads, 0);
 
         /* Retrieve pid task_struct */
 	return count;

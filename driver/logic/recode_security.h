@@ -5,6 +5,29 @@
 #include "pmu/pmu.h"
 #include "recode.h"
 
+enum tuning_type {
+	FR = 0,
+	XL = 1
+};
+
+extern enum tuning_type tuning_type;
+
+struct sc_thresholds {
+	unsigned nr;
+	unsigned cnt;
+	s64 ths[];
+};
+
+extern struct sc_thresholds sc_ths_fr;
+extern struct sc_thresholds sc_ths_xl;
+
+extern bool signal_detected;
+extern unsigned ts_window;
+extern unsigned ts_alpha;
+extern unsigned ts_beta;
+
+extern atomic_t detected_theads;
+
 /* L2_miss / L1_miss */
 #define DM0(p, sn)                                                             \
 	((pmcs_general(sn->pmcs)[1] * p) / (pmcs_general(sn->pmcs)[0] + 1))
@@ -13,19 +36,16 @@
 	((pmcs_general(sn->pmcs)[2] * p) / (pmcs_general(sn->pmcs)[0] + 1))
 /* L2_write_back / L2_lines_in */
 #define DM2(p, sn)                                                             \
-	((pmcs_general(sn->pmcs)[3] * p) / (pmcs_general(sn->pmcs)[4] + 1))
+	((pmcs_general(sn->pmcs)[4] * p) / (pmcs_general(sn->pmcs)[5] + 1))
+	// ((pmcs_general(sn->pmcs)[0] * p) / (pmcs_general(sn->pmcs)[0] + 1))
 /* TLB_l2_miss / L1_miss */
 #define DM3(p, sn)                                                             \
-	((pmcs_general(sn->pmcs)[5] * p) / (pmcs_general(sn->pmcs)[0] + 1))
+	((pmcs_general(sn->pmcs)[3] * p) / (pmcs_general(sn->pmcs)[0] + 1))
 
-#define CHECK_LESS_THAN_TS(ts, v, p) ((ts - p) < v)
-#define CHECK_MORE_THAN_TS(ts, v, p) (v < (ts + p))
+#define LESS_THAN_TS(ts, v, p) ((ts - p) < v)
+#define MORE_THAN_TS(ts, v, p) (v < (ts + p))
 
 struct detect_stats {
-	/* Voluntary CTX before detection */
-	unsigned nvcsw;
-	/* UnVoluntary CTX before detection */
-	unsigned nivcsw;
 	/* Execution time */
 	u64 utime;
 	u64 stime;
@@ -33,9 +53,11 @@ struct detect_stats {
 	pid_t pid;
 	pid_t tgid;
 	char comm[32];
-	/* PMIs since first detection */
-	unsigned pmis;
-	unsigned skpmis;
+	/* Detection data */
+	unsigned s1;
+	unsigned p4;
+	unsigned score;
+	unsigned ticks;
 };
 
 int recode_security_init(void);

@@ -1,6 +1,10 @@
+import re
 import subprocess
 from enum import IntEnum
 
+
+def clearText(text):
+    return re.sub(r'\x1b(\[.*?[@-~]|\].*?(\x07|\x1b\\))', '', text)
 
 class Pipe(IntEnum):
     OUT = 0
@@ -28,3 +32,26 @@ def cmd(cmd_seq, type=None, sh=False, timeOut=None):
     except Exception as e:
         print("An error occurred:" + str(e))
         return "", "", -1
+
+
+def icmd(cmd_seq, sh=False):
+    try:
+        p = subprocess.Popen(
+            cmd_seq, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE, shell=sh
+        )
+        return p
+    except Exception as e:
+        print("An error occurred:" + str(e))
+        return "", "", -1
+
+
+def xcmd(cmd_seq, sh=False):
+        process = icmd(cmd_seq, sh)
+
+        while True:
+            output = clearText(process.stdout.readline().decode("utf-8"))
+
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                print(output)

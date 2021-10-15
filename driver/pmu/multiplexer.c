@@ -224,7 +224,6 @@ bool pmc_access_on_pmi(unsigned cpu)
 	bool multiplexing = per_cpu(pcpu_pmus_metadata.multiplexing, cpu);
 
 	if (multiplexing) {
-		pr_warn("MULTIPLEXING HW EVENTS\n");
 		return pmc_multiplexing_access(cpu);
 	} else {
 		return pmc_fast_access(cpu);

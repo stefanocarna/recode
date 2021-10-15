@@ -9,9 +9,10 @@ import utils.plug_config as plug_config
 import utils.plug_profiler as plug_profiler
 import utils.plug_data as plug_data
 import utils.plug_network as plug_network
+import utils.plug_security as plug_security
 
 
-PLUGINS = [plug_module, plug_config, plug_profiler, plug_data, plug_network]
+PLUGINS = [plug_module, plug_config, plug_profiler, plug_data, plug_network, plug_security]
 
 CONFIG_FILE = 'recode.ini'
 

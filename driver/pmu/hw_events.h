@@ -56,9 +56,9 @@ enum { __X_COUNTER__ = __COUNTER__ };
 	X_HW_EVENTS(l2_all_data, evt_umask_cmask(0x24, 0xe1, 0))               \
 	X_HW_EVENTS(l2_data_misses, evt_umask_cmask(0x24, 0x21, 0))            \
 	X_HW_EVENTS(l3_miss_data, evt_umask_cmask(0xb0, 0x10, 0))              \
+	X_HW_EVENTS(tlb_page_walk, evt_umask_cmask(0x08, 0x01, 0))	       \
 	X_HW_EVENTS(l2_wb, evt_umask_cmask(0xf0, 0x40, 0))                     \
-	X_HW_EVENTS(l2_in_all, evt_umask_cmask(0xf1, 0x07, 0))                 \
-	X_HW_EVENTS(tlb_page_walk, evt_umask_cmask(0x08, 0x01, 0))
+	X_HW_EVENTS(l2_in_all, evt_umask_cmask(0xf1, 0x07, 0))
 
 // X_HW_EVENTS(null, evt_umask_cmask(0, 0, 0))
 

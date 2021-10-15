@@ -36,9 +36,11 @@ extern int register_proc_frequency(void);
 extern int register_proc_sample_info(void);
 extern int register_proc_processes(void);
 extern int register_proc_state(void);
-extern int register_proc_statistics(void);
 #ifdef SECURITY_MODULE_ON
 extern int register_proc_mitigations(void);
+extern int register_proc_thresholds(void);
+extern int register_proc_security(void);
+extern int register_proc_statistics(void);
 #endif
 
 #endif /* _PROC_H */

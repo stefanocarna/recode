@@ -192,11 +192,11 @@ static void on_context_switch_callback(struct task_struct *prev, bool prev_on,
 
 	switch (recode_state) {
 	case OFF:
-		disable_pmc_on_this_cpu(true);
+		disable_pmc_on_this_cpu(false);
 		goto end;
 	case IDLE:
-		prev_on = false;
-		fallthrough;
+		enable_pmc_on_this_cpu(false);
+		break;
 	case SYSTEM:
 		enable_pmc_on_this_cpu(false);
 		prev_on = true;
@@ -217,7 +217,6 @@ static void on_context_switch_callback(struct task_struct *prev, bool prev_on,
 	}
 
 	if (unlikely(!prev)) {
-		pr_warn("Called Context Switch Callback with NULL prev\n");
 		goto end;
 	}
 

@@ -22,6 +22,16 @@ def setParserArguments(parser):
     )
 
     plug_parser.add_argument(
+        "-tt",
+        "--tuning-type",
+        type=str,
+        required=False,
+        metavar="T",
+        choices=["FR", "XL"],
+        help="Set the Recode tuning type: T",
+    )
+
+    plug_parser.add_argument(
         "-f",
         "--frequency",
         metavar="F",
@@ -51,7 +61,18 @@ def setParserArguments(parser):
     )
 
 
-def action_state(action):
+def action_state(action, type):
+    path = RECODE_PROC_PATH + "/security/tuning"
+
+    if type == "FR":
+        _file = open(path, "w")
+        _file.write("0")
+        _file.close()
+    elif type == "XL":
+        _file = open(path, "w")
+        _file.write("1")
+        _file.close()
+
     path = RECODE_PROC_PATH + "/state"
 
     _file = open(path, "w")
@@ -154,7 +175,7 @@ def compute(args, config):
         action_frequency(args.frequency)
 
     if args.state:
-        action_state(args.state)
+        action_state(args.state, args.tuning_type)
 
     if args.info:
         action_info()
