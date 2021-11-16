@@ -7,6 +7,8 @@ HELP_DESC = "Configure Recode Module's paramenters"
 
 RECODE_PROC_PATH = "/proc/recode"
 
+PMUDRV_PROC_PATH = "/proc/pmudrv"
+
 
 def setParserArguments(parser):
 
@@ -62,20 +64,18 @@ def setParserArguments(parser):
 
 
 def action_state(action, type):
-    path = RECODE_PROC_PATH + "/security/tuning"
+    # path = RECODE_PROC_PATH + "/security/tuning"
 
-    if type == "FR":
-        _file = open(path, "w")
-        _file.write("0")
-        _file.close()
-    elif type == "XL":
-        _file = open(path, "w")
-        _file.write("1")
-        _file.close()
+    # if type == "FR":
+    #     _file = open(path, "w")
+    #     _file.write("0")
+    #     _file.close()
+    # elif type == "XL":
+    #     _file = open(path, "w")
+    #     _file.write("1")
+    #     _file.close()
 
     path = RECODE_PROC_PATH + "/state"
-
-    _file = open(path, "w")
 
     if action == "off":
         value = "0"
@@ -92,7 +92,9 @@ def action_state(action, type):
         value = "2"
     else:
         pr_warn("Something wrong: --state " + action + " illegal")
+        return
 
+    _file = open(path, "w")
     _file.write(value)
     _file.close()
 
@@ -105,7 +107,7 @@ def action_frequency(value):
 
     pmc_mask = (1 << value) - 1
 
-    path = RECODE_PROC_PATH + "/frequency"
+    path = PMUDRV_PROC_PATH + "/frequency"
 
     _file = open(path, "w")
 
@@ -118,7 +120,7 @@ def get_info(info):
         pr_warn("Cannot read " + info + " info. Returning 0")
         return 0
 
-    path = RECODE_PROC_PATH + "/" + info
+    path = PMUDRV_PROC_PATH + "/" + info
     _file = open(path, "r")
     value = _file.readlines()
     _file.close()

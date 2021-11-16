@@ -112,6 +112,8 @@ def action_extract(args):
             cpuDict["id"] = cpuFile
             cpuDict["data"] = parsed
             cpuList.append(cpuDict)
+        else:
+            print("No data on" + cpuFile)
 
         pcr.close()
 
@@ -149,6 +151,8 @@ def action_extract_tma(args):
             cpuDict["id"] = cpuFile
             cpuDict["data"] = parsed
             cpuList.append(cpuDict)
+        else:
+            print("No data on" + cpuFile)
 
         pcr.close()
 

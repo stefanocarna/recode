@@ -88,13 +88,13 @@ def __perform_action(action):
 
 
 def action_load():
-    action = "make insert"
+    action = "make load"
     pr_info("Mounting module...")
     return __perform_action(action)
 
 
 def action_unload():
-    action = "make remove"
+    action = "make unload"
     pr_info("Unmounting module...")
     return __perform_action(action)
 

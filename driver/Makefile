@@ -1,86 +1,50 @@
-export MODULE_NAME = recode
-export KROOT = /lib/modules/$(shell uname -r)/build
+PWD = $(shell pwd)
+KDIR = /lib/modules/$(shell uname -r)/build
 
-INCLUDES = -I$(src)/../include -I$(src)
-# ccflags-y := $(INCLUDE_DIR)
+MODULES = ../../driver/pmu/ ../driver/recode/
 
-EXTRA_CFLAGS :=
-EXTRA_CFLAGS +=	-std=gnu99					\
+obj-m := $(MODULES)
+
+EXTRA_CFLAGS =	-std=gnu99					\
 		-fno-builtin-memset				\
 		-Werror						\
 		-Wframe-larger-than=400				\
-		-Wno-declaration-after-statement		\
-		$(INCLUDES)
+		-Wno-declaration-after-statement
 
-$(MODULE_NAME)-y := recode_config.o
-$(MODULE_NAME)-y += recode_core.o
-$(MODULE_NAME)-y += recode_collector.o
-$(MODULE_NAME)-y += recode_module.o
+PLUGIN :=
+CFLAGS_MODULE := 
 
-# Logic (use flag to define one logic at time)
-ifeq ($(findstring -DTMA_MODULE,$(CFLAGS_MODULE)),-DTMA_MODULE)
-$(MODULE_NAME)-y += logic/recode_tma.o
+ifeq ($(PLUGIN), TMA)
+	CFLAGS_MODULE += -DTMA_MODULE
 endif
-ifeq ($(findstring -DSECURITY_MODULE,$(CFLAGS_MODULE)),-DSECURITY_MODULE)
-$(MODULE_NAME)-y += logic/recode_security.o
-$(MODULE_NAME)-y += device/proc_mitigations.o
-$(MODULE_NAME)-y += device/proc_thresholds.o
-$(MODULE_NAME)-y += device/proc_security.o
-$(MODULE_NAME)-y += device/proc_statistics.o
+ifeq ($(PLUGIN), SECURITY)
+	CFLAGS_MODULE += -DSECURITY_MODULE
 endif
-
-DEVICE_DIR 	:= device
-DEVICE_SOURCES 	:= $(wildcard $(DEVICE_DIR)/*.c)
-DEVICE_OBJECTS 	:= $(DEVICE_SOURCES:%.c=%.o)
-
-# $(MODULE_NAME)-y += $(DEVICE_OBJECTS)
-
-$(MODULE_NAME)-y += pmu/pmi.o
-$(MODULE_NAME)-y += pmu/pmu.o
-$(MODULE_NAME)-y += pmu/pmu_events.o
-$(MODULE_NAME)-y += pmu/multiplexer.o
-
-$(MODULE_NAME)-y += device/proc.o
-$(MODULE_NAME)-y += device/proc_cpus.o
-$(MODULE_NAME)-y += device/proc_frequency.o
-$(MODULE_NAME)-y += device/proc_sample_info.o
-$(MODULE_NAME)-y += device/proc_processes.o
-$(MODULE_NAME)-y += device/proc_state.o
-
-obj-m := $(MODULE_NAME).o
 
 ECHO = echo
 
-
-.PHONY: modules modules_install clean insert debug remove reboot help
-
+.PHONY: modules modules_install clean load unload debug security tma
 
 modules:
-	@$(MAKE) -w -C $(KROOT) M=$(PWD) modules
+	@$(MAKE) -w -C $(KDIR) M=$(PWD) modules
 
 modules_install:
-	@$(MAKE) -C $(KROOT) M=$(PWD) modules_install
+	@$(MAKE) -C $(KDIR) M=$(PWD) modules_install
 
 clean:
-	@$(MAKE) -C $(KROOT) M=$(PWD) clean
+	@$(MAKE) -C $(KDIR) M=$(PWD) clean
 	rm -rf   Module.symvers modules.order
 
-insert:
-	sudo insmod $(MODULE_NAME).ko
+load:
+	for mod in $(shell cat modules.order); do sudo insmod $$mod; done
+
+unload:
+	for mod in $(shell tac modules.order); do \
+		sudo rmmod $(basename $$mod) || (echo "rmmod $$mod failed $$?"; exit 1); \
+	done
 
 debug:
-	sudo insmod $(MODULE_NAME).ko dyndbg==pmf
+	sudo insmod dependencies/pmu/src/pmudrv.ko dyndbg==pmf
+	sudo insmod driver/recode.ko dyndbg==pmf
+	# for mod in $(shell cat modules.order); do sudo insmod $$mod dyndbg==pmf; done
 
-remove:
-	sudo rmmod $(MODULE_NAME)
-
-reboot: clean insert
-
-help:
-	@$(ECHO) "Targets $(DEVICE_OBJECTS)"
-	@$(ECHO) "all     - buildcompile what is necessary"
-	@$(ECHO) "clean   - cleanup old .o and .bin"
-	@$(ECHO) "insert  - load the compiled module"
-	@$(ECHO) "debug   - load the compiled module with debug prints"
-	@$(ECHO) "remove  - unload the module (if loaded)"
-	@$(ECHO) "reboot  - perform 'remove' and 'insert'"

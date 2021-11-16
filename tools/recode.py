@@ -63,6 +63,7 @@ def parser_init():
 
 def compute_plugins(args, config):
     for p in PLUGINS:
+        # print("Plugin " + p.PLUGIN_NAME + ": " + str(p.compute(args, config)))
         p.compute(args, config)
 
 

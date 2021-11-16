@@ -46,7 +46,7 @@ class ProcCpuReader:
 
 
 # TODO - Sample header is hard coded, but should be taken from recode
-SAMPLE_HEADER = ["PID", "TRACKED", "KTHREAD", "TSC",
+SAMPLE_HEADER = ["PID", "NAME", "TRACKED", "KTHREAD", "TSC",
                  "TSC_CYCLES", "CORE_CYCLES", "CORE_CYCLES_TSC", "MASK"]
 
 MASK_HEADER = {0:  ["BB", "BS", "RE", "FB"],
@@ -83,7 +83,10 @@ class ProcCpuReaderTMA:
 
             # Define fixed part
             for i, w in enumerate(values[0: offset]):
-                self.dictLines[SAMPLE_HEADER[i]].append(int(w))
+                if (SAMPLE_HEADER[i] == "NAME"):
+                    self.dictLines[SAMPLE_HEADER[i]].append(w)
+                else:
+                    self.dictLines[SAMPLE_HEADER[i]].append(int(w))
 
             k = 0
             for i, w in enumerate(MASK_HEADER_FULL):
