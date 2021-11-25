@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
+
 #ifndef _RECODE_CORE_H
 #define _RECODE_CORE_H
 
@@ -27,6 +29,7 @@ enum recode_state {
 	PROFILE = 2,
 	SYSTEM = 3,
 	IDLE = 4, // Useless
+	KILL = 5
 };
 
 extern enum recode_state __read_mostly recode_state;
@@ -53,12 +56,43 @@ extern int attach_process(struct task_struct *tsk);
 extern void detach_process(struct task_struct *tsk);
 
 /* Groups */
+extern uint nr_groups;
+
+struct group_entity {
+	uint id;
+	void *data;
+	spinlock_t lock;
+	/* Atomicity is not required */
+	uint nr_processes;
+	struct list_head p_list;
+};
+
+struct proc_entity {
+	pid_t pid;
+	void *data;
+	struct task_struct *task;
+	struct group_entity *group;
+};
+
 int recode_groups_init(void);
 void recode_groups_fini(void);
-void *create_group(struct task_struct *task, size_t payload_size);
-void *has_group_payload(struct task_struct *task);
-bool is_group_creator(struct task_struct *task);
-void destroy_group(struct task_struct *task);
+
+int register_process_to_group(pid_t pid, struct group_entity *group, void *data);
+
+void *unregister_process_from_group(pid_t pid, struct group_entity *group);
+
+struct group_entity *create_group(uint id, void *payload);
+
+struct group_entity *get_group_by_proc(pid_t pid);
+struct group_entity *get_group_by_id(uint id);
+struct group_entity *get_next_group_by_id(uint id);
+
+void *destroy_group(uint id);
+
+void signal_to_group(uint signal, uint id);
+void signal_to_all_groups(uint signal);
+void schedule_all_groups(void);
+
 
 // void setup_hw_events_from_proc(pmc_evt_code *hw_events_codes, unsigned cnt);
 

@@ -182,7 +182,9 @@ int pmu_global_init(void)
 	/* TODO Make modular */
 	cpumask_copy(&pmu_enabled_cpumask, cpu_all_mask);
 	// cpumask_clear(&pmu_enabled_cpumask);
-	// cpumask_set_cpu(5, &pmu_enabled_cpumask);
+	// pr_warn("*** PMUDRV set only on CPU 2 ***\n");
+	// cpumask_set_cpu(2, &pmu_enabled_cpumask);
+
 
 	pr_debug("num_possible_cpus: %u\n", num_possible_cpus());
 

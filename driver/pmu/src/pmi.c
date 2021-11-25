@@ -69,7 +69,7 @@ static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 	 * request.
 	 */
 
-	if (pmc_access_on_pmi(cpu))
+	if (pmc_access_on_pmi_local())
 		on_pmi_callback(cpu, per_cpu_ptr(&pcpu_pmus_metadata, cpu));
 
 	handled++;

@@ -57,7 +57,9 @@ void fast_setup_general_pmc_local(struct pmc_evt_sel *pmc_cfgs, uint off,
 	ctrl = FIXED_PMCS_TO_BITS_MASK | GENERAL_PMCS_TO_BITS_MASK(cnt);
 
 	/* Unneeded PMCs are disabled in ctrl */
-	for_each_active_general_pmc(ctrl, pmc) {
+	for_each_active_general_pmc(ctrl, pmc)
+	{
+		// TODO Check this write and pmc_cfgs allocation
 		SETUP_GENERAL_PMC(pmc, pmc_cfgs[pmc + off].perf_evt_sel);
 		WRITE_GENERAL_PMC(pmc, 0ULL);
 	}
@@ -69,15 +71,16 @@ static void __update_reset_period_local(void)
 {
 	pmc_ctr reset_period;
 
-	reset_period = gbl_reset_period / this_cpu_read(pcpu_pmus_metadata.multiplexing);
+	reset_period = gbl_reset_period /
+		       this_cpu_read(pcpu_pmus_metadata.multiplexing);
 
 	reset_period = PMC_TRIM(~reset_period);
 
 	this_cpu_write(pcpu_pmus_metadata.pmi_reset_value, reset_period);
 
-	pr_debug("[%u] Reset period set: %llx - Multiplexing times: %u\n",
-		 smp_processor_id(), reset_period,
-		 this_cpu_read(pcpu_pmus_metadata.multiplexing));
+	pr_info("[%u] Reset period set: %llx - Multiplexing times: %u\n",
+		smp_processor_id(), reset_period,
+		this_cpu_read(pcpu_pmus_metadata.multiplexing));
 }
 
 static void __update_reset_period_local_smp(void *unused)
@@ -126,6 +129,8 @@ static void __reset_hw_events_local(void)
 
 	WRITE_FIXED_PMC(gbl_fixed_pmc_pmi,
 			this_cpu_read(pcpu_pmus_metadata.pmi_reset_value));
+
+	this_cpu_inc(pcpu_pmus_metadata.ctx_cnt);
 }
 
 void reset_hw_events_local(void)
@@ -141,9 +146,10 @@ void reset_hw_events_local(void)
 void setup_hw_events_local(struct hw_events *hw_events)
 {
 	/* TODO improve avoid processing already scheduled hw_events */
-	bool state;
-	uint hw_cnt;
 	uint tmp;
+	uint hw_cnt;
+	bool state;
+	bool mpx_round;
 	struct pmcs_collection *pmcs_collection;
 
 	if (!hw_events || !hw_events->cnt) {
@@ -153,6 +159,8 @@ void setup_hw_events_local(struct hw_events *hw_events)
 	}
 
 	save_and_disable_pmcs_local(&state);
+
+	pr_err("%s @ %u\n", __func__, smp_processor_id());
 
 	hw_cnt = hw_events->cnt;
 
@@ -165,9 +173,9 @@ void setup_hw_events_local(struct hw_events *hw_events)
 	this_cpu_write(pcpu_pmus_metadata.hw_events, hw_events);
 	/* Overcoming FPU "lack" - hw_cnt cannot be zero */
 	tmp = hw_cnt / gbl_nr_pmc_general;
-	tmp *= gbl_nr_pmc_general;
+	mpx_round = (tmp * gbl_nr_pmc_general) != hw_cnt;
 	this_cpu_write(pcpu_pmus_metadata.multiplexing,
-		       tmp == hw_cnt ? tmp : tmp + 1);
+		       mpx_round ? tmp + 1 : tmp);
 
 	/* Update pmc index array */
 	on_hw_events_setup_callback(hw_events);
@@ -210,7 +218,7 @@ struct hw_events *create_hw_events(pmc_evt_code *codes, uint cnt)
 	}
 
 	/* Remove duplicates */
-	for (i = 0, b = 0; b < sizeof(u64); ++b) {
+	for (i = 0, b = 0; b < 64; ++b) {
 		if (!(mask & BIT(b)))
 			continue;
 
@@ -220,8 +228,8 @@ struct hw_events *create_hw_events(pmc_evt_code *codes, uint cnt)
 		hw_events->cfgs[i].os = !!(params_cpl_os);
 		hw_events->cfgs[i].pmi = 0;
 		hw_events->cfgs[i].en = 1;
-		pr_debug("Configure HW_EVENT %llx\n",
-			 hw_events->cfgs[i].perf_evt_sel);
+		pr_info("Configure HW_EVENT %llx\n",
+			hw_events->cfgs[i].perf_evt_sel);
 
 		++i;
 	}
@@ -229,7 +237,8 @@ struct hw_events *create_hw_events(pmc_evt_code *codes, uint cnt)
 	hw_events->cnt = i;
 	hw_events->mask = mask;
 
-	pr_info("Created hw_events MASK: %llx\n", hw_events->mask);
+	pr_info("Created hw_events MASK: %llx (cnt %u)\n", hw_events->mask,
+		hw_events->cnt);
 
 	return hw_events;
 }

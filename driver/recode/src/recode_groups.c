@@ -4,120 +4,411 @@
 #include <linux/hashtable.h>
 #include <linux/slab.h>
 #include <linux/wait.h>
+#include <linux/pid.h>
+#include <linux/sched.h>
 
 #include <linux/sched/signal.h>
 
 #include "recode.h"
 
-/* PIDs are stored into a Hashmap */
-DECLARE_HASHTABLE(tracked_map, 8);
-/* Lock the list access */
-static spinlock_t lock;
+uint nr_groups;
 
-struct tp_node {
-	pid_t id;
+/* PIDs are stored into a Hashmap */
+static DECLARE_HASHTABLE(proc_map, 8);
+static DECLARE_HASHTABLE(group_map, 8);
+/* Lock the list access */
+static spinlock_t p_lock;
+static spinlock_t g_lock;
+
+struct group_node {
+	uint key;
+	struct group_entity *group;
 	struct hlist_node node;
-	void *payload;
+};
+
+struct proc_node {
+	uint key;
+	struct proc_entity *proc;
+	struct hlist_node node;
+};
+
+struct proc_list {
+	uint key;
+	struct proc_entity *proc;
+	struct list_head list;
 };
 
 int recode_groups_init(void)
 {
 	int err = 0;
 
-	spin_lock_init(&lock);
+	spin_lock_init(&p_lock);
+	spin_lock_init(&g_lock);
 
-	hash_init(tracked_map);
+	hash_init(proc_map);
+	hash_init(group_map);
 
 	return err;
 }
 
-/* Delete all the groups */
+static void free_group_proc_list(struct group_entity *group)
+{
+	unsigned long flags;
+	struct proc_list *cur, *tmp;
+
+	spin_lock_irqsave(&group->lock, flags);
+	list_for_each_entry_safe(cur, tmp, &group->p_list, list) {
+		list_del(&cur->list);
+		kfree(cur);
+	}
+	spin_unlock_irqrestore(&group->lock, flags);
+
+	group->nr_processes = 0;
+}
+
+/* Clear all maps */
+/* NOTE We cannot free enitities here */
 void recode_groups_fini(void)
 {
 	unsigned long flags;
-	uint groups = 0;
+	uint nr_del_procs = 0;
+	uint nr_del_groups = 0;
 	uint bkt;
-	struct tp_node *cur;
+	struct proc_node *pcur;
+	struct group_node *gcur;
 	struct hlist_node *next;
 
-	spin_lock_irqsave(&lock, flags);
-	hash_for_each_safe(tracked_map, bkt, next, cur, node) {
-		hash_del(&cur->node);
-		kvfree(cur);
-		groups++;
+	spin_lock_irqsave(&g_lock, flags);
+	hash_for_each_safe(group_map, bkt, next, gcur, node) {
+		free_group_proc_list(gcur->group);
+		hash_del(&gcur->node);
+		kfree(gcur);
+		nr_groups--;
+		nr_del_groups++;
 	}
-	spin_unlock_irqrestore(&lock, flags);
-	pr_info("Destroyed %u groups\n", groups);
-}
+	spin_unlock_irqrestore(&g_lock, flags);
 
-void *create_group(struct task_struct *task, size_t payload_size)
-{
-	unsigned long flags;
-	struct tp_node *tp;
-	pid_t id = task->tgid;
-
-	tp = kvzalloc(sizeof(struct tp_node) + payload_size, GFP_KERNEL);
-	if (!tp)
-		return NULL;
-
-	tp->id = id;
-
-	spin_lock_irqsave(&lock, flags);
-	hash_add(tracked_map, &tp->node, id);
-	spin_unlock_irqrestore(&lock, flags);
-
-	send_sig_info(SIGSTOP, SEND_SIG_NOINFO, task);
-
-	pr_info("Created group %u\n", id);
-	return tp->payload;
-}
-
-void *has_group_payload(struct task_struct *task)
-{
-	unsigned long flags;
-	struct tp_node *cur;
-	pid_t id = task->tgid;
-
-	spin_lock_irqsave(&lock, flags);
-	hash_for_each_possible(tracked_map, cur, node, id) {
-		if (cur->id == id) {
-			spin_unlock_irqrestore(&lock, flags);
-			return cur->payload;
-		}
+	spin_lock_irqsave(&p_lock, flags);
+	hash_for_each_safe(proc_map, bkt, next, pcur, node) {
+		hash_del(&pcur->node);
+		kfree(pcur);
+		nr_del_procs++;
 	}
-	spin_unlock_irqrestore(&lock, flags);
-	return NULL;
+	spin_unlock_irqrestore(&p_lock, flags);
+
+	pr_info("Proc Entities leak (%u)\n", nr_del_procs);
+	pr_info("Groups (%u) destroyed (%u)\n", nr_groups, nr_del_groups);
 }
 
-
-bool is_group_creator(struct task_struct *task)
-{
-	if (task->pid != task->tgid)
-		return false;
-
-	return !!has_group_payload(task);
-}
-
-void destroy_group(struct task_struct *task)
+static int insert_process_to_group_list(pid_t pid, struct group_entity *group,
+					struct proc_entity *pentity)
 {
 	unsigned long flags;
+	struct proc_list *p_list = kmalloc(sizeof(*p_list), GFP_KERNEL);
+
+	if (!p_list)
+		return -ENOMEM;
+
+	p_list->key = pid;
+	p_list->proc = pentity;
+
+	spin_lock_irqsave(&group->lock, flags);
+	list_add_tail(&p_list->list, &group->p_list);
+	group->nr_processes++;
+	spin_unlock_irqrestore(&group->lock, flags);
+
+	pr_info("[G] Add #p %u @g %u\n", pid, group->id);
+	return 0;
+}
+
+static struct proc_entity *remove_process_from_group_list(pid_t pid,
+					   struct group_entity *group)
+{
 	bool exist = false;
-	struct tp_node *cur;
-	struct hlist_node *next;
-	pid_t id = task->tgid;
+	unsigned long flags;
+	struct proc_list *cur, *tmp;
+	struct proc_entity *pentity = NULL;
 
-	spin_lock_irqsave(&lock, flags);
-	hash_for_each_possible_safe(tracked_map, cur, next, node, id) {
-		if (cur->id == id) {
+	spin_lock_irqsave(&group->lock, flags);
+	list_for_each_entry_safe(cur, tmp, &group->p_list, list)
+		if (cur->key == pid) {
+			exist = true;
+			list_del(&cur->list);
+			group->nr_processes--;
+			break;
+		}
+	spin_unlock_irqrestore(&group->lock, flags);
+
+	if (exist) {
+		pr_info("[G] Del #p %u @g %u\n", pid, group->id);
+		pentity = cur->proc;
+		kfree(cur);
+	}
+
+	return pentity;
+}
+
+static int insert_process_to_processes_map(struct proc_entity *pentity)
+{
+	unsigned long flags;
+	struct proc_node *pnode;
+
+	pnode = kmalloc(sizeof(struct proc_node), GFP_KERNEL);
+	if (!pnode)
+		return -ENOMEM;
+
+	pnode->key = pentity->pid;
+	pnode->proc = pentity;
+
+	spin_lock_irqsave(&p_lock, flags);
+	hash_add(proc_map, &pnode->node, pnode->key);
+	spin_unlock_irqrestore(&p_lock, flags);
+
+	pr_info("[P] Add #p %u @g %u\n", pentity->pid, pentity->group->id);
+
+	return 0;
+}
+
+void remove_process_from_processes_map(pid_t pid, struct group_entity *group)
+{
+	bool exist = false;
+	unsigned long flags;
+	struct proc_node *cur;
+	struct hlist_node *next;
+
+	spin_lock_irqsave(&p_lock, flags);
+	hash_for_each_possible_safe(proc_map, cur, next, node, pid) {
+		if (cur->key == pid) {
 			exist = true;
 			hash_del(&cur->node);
 			break;
 		}
 	}
-	spin_unlock_irqrestore(&lock, flags);
+	spin_unlock_irqrestore(&p_lock, flags);
 
 	if (exist) {
 		kvfree(cur);
+		pr_info("[P] Del #p %u @g %u\n", pid, group->id);
+	}
+}
+
+int register_process_to_group(pid_t pid, struct group_entity *group, void *data)
+{
+	int err = 0;
+	struct proc_entity *pentity;
+
+	if (!group)
+		return -EINVAL;
+
+	pentity = kzalloc(sizeof(struct group_entity), GFP_KERNEL);
+	if (!pentity)
+		return -ENOMEM;
+
+	/* TODO we may save this call by passing the task_struct as parameter */
+	pentity->task = get_pid_task(find_get_pid(pid), PIDTYPE_PID);
+
+	if (!pentity->task) {
+		err = -ESRCH;
+		goto no_task;
+	}
+
+	pentity->pid = pid;
+	pentity->data = data;
+	pentity->group = group;
+
+	err = insert_process_to_group_list(pid, group, pentity);
+	if (err)
+		goto err_group;
+
+	err = insert_process_to_processes_map(pentity);
+	if (err)
+		goto err_process;
+
+	return 0;
+
+err_process:
+	remove_process_from_group_list(pid, group);
+err_group:
+	put_task_struct(pentity->task);
+no_task:
+	kfree(pentity);
+	return err;
+}
+
+void *unregister_process_from_group(pid_t pid, struct group_entity *group)
+{
+	void *data = NULL;
+	struct proc_entity *pentity;
+
+	if (!group)
+		return NULL;
+
+	remove_process_from_processes_map(pid, group);
+
+	pentity = remove_process_from_group_list(pid, group);
+
+	data = pentity->data;
+	put_task_struct(pentity->task);
+	kfree(pentity);
+
+	return data;
+}
+
+struct group_entity *create_group(uint id, void *data)
+{
+	unsigned long flags;
+	struct group_node *gnode;
+	struct group_entity *gentity;
+
+	gnode = kzalloc(sizeof(struct group_node), GFP_KERNEL);
+	if (!gnode)
+		return NULL;
+
+	gentity = kzalloc(sizeof(struct group_entity), GFP_KERNEL);
+	if (!gentity)
+		goto no_entity;
+
+	gnode->key = id;
+	gnode->group = gentity;
+
+	gentity->id = id;
+	gentity->data = data;
+	gentity->nr_processes = 0;
+	INIT_LIST_HEAD(&gentity->p_list);
+	spin_lock_init(&gentity->lock);
+
+	spin_lock_irqsave(&g_lock, flags);
+	hash_add(group_map, &gnode->node, id);
+	nr_groups++;
+	spin_unlock_irqrestore(&g_lock, flags);
+
+	pr_info("Created group %u\n", id);
+	return gentity;
+
+no_entity:
+	kfree(gnode);
+	return NULL;
+}
+
+void *destroy_group(uint id)
+{
+	void *data = NULL;
+	bool exist = false;
+	unsigned long flags;
+	struct group_node *cur;
+	struct hlist_node *next;
+
+	spin_lock_irqsave(&g_lock, flags);
+	hash_for_each_possible_safe(group_map, cur, next, node, id) {
+		if (cur->key == id) {
+			exist = true;
+			hash_del(&cur->node);
+			nr_groups--;
+			break;
+		}
+	}
+	spin_unlock_irqrestore(&g_lock, flags);
+
+	if (exist) {
+		data = cur->group->data;
+		kfree(cur->group);
+		kfree(cur);
 		pr_info("Destroyed group %u\n", id);
 	}
+
+	return data;
+}
+
+struct group_entity *get_group_by_proc(pid_t pid)
+{
+	unsigned long flags;
+	struct proc_node *cur;
+
+	spin_lock_irqsave(&p_lock, flags);
+	hash_for_each_possible(proc_map, cur, node, pid) {
+		if (cur->key == pid) {
+			spin_unlock_irqrestore(&p_lock, flags);
+			return cur->proc->group;
+		}
+	}
+	spin_unlock_irqrestore(&p_lock, flags);
+	return NULL;
+}
+
+struct group_entity *get_group_by_id(uint id)
+{
+	unsigned long flags;
+	struct group_node *cur;
+
+	spin_lock_irqsave(&g_lock, flags);
+	hash_for_each_possible(group_map, cur, node, id) {
+		if (cur->key == id) {
+			spin_unlock_irqrestore(&g_lock, flags);
+			return cur->group;
+		}
+	}
+	spin_unlock_irqrestore(&g_lock, flags);
+	return NULL;
+}
+
+struct group_entity *get_next_group_by_id(uint id)
+{
+	uint bkt;
+	unsigned long flags;
+	struct group_node *cur = NULL;
+	bool stop = !id || nr_groups < 2;
+
+	spin_lock_irqsave(&g_lock, flags);
+
+	if (!nr_groups) {
+		spin_unlock_irqrestore(&g_lock, flags);
+		return NULL;
+	}
+
+	hash_for_each(group_map, bkt, cur, node) {
+		pr_info("%s GROUP %u\n", __func__, cur->key);
+		if (stop)
+			break;
+		if (cur->key == id)
+			stop = true;
+	}
+	spin_unlock_irqrestore(&g_lock, flags);
+
+	if (!cur && nr_groups > 1)
+		return get_next_group_by_id(0);
+
+	return cur->group;
+}
+
+static void __signal_to_group(uint signal, struct group_entity *group)
+{
+	struct proc_list *cur;
+	unsigned long flags;
+
+	spin_lock_irqsave(&group->lock, flags);
+	list_for_each_entry(cur, &group->p_list, list)
+		send_sig_info(signal, SEND_SIG_NOINFO, cur->proc->task);
+	spin_unlock_irqrestore(&group->lock, flags);
+}
+
+void signal_to_group(uint signal, uint id)
+{
+	struct group_entity *group = get_group_by_id(id);
+
+	if (!group)
+		return;
+
+	__signal_to_group(signal, group);
+}
+
+void signal_to_all_groups(uint signal)
+{
+	uint bkt;
+	unsigned long flags;
+	struct group_node *cur;
+
+	spin_lock_irqsave(&g_lock, flags);
+	hash_for_each(group_map, bkt, cur, node)
+		__signal_to_group(signal, cur->group);
+	spin_unlock_irqrestore(&g_lock, flags);
 }

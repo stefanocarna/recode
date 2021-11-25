@@ -26,10 +26,9 @@ enum hook_type {
 #define ARGS_SCHED_IN                                                          \
 	ARGS_DATA(bool preempt, struct task_struct *prev,                      \
 		  struct task_struct *next)
+#define ARGS_PROC_FORK                                                         \
+	ARGS_DATA(struct task_struct *parent, struct task_struct *child)
 #define ARGS_PROC_EXIT ARGS_DATA(struct task_struct *p)
-
 
 int register_hook(enum hook_type type, void *func);
 void unregister_hook(enum hook_type type, void *func);
-
-

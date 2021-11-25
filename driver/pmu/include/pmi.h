@@ -20,6 +20,6 @@ void pmi_irq_cleanup(void);
 
 extern atomic_t active_pmis;
 
-bool pmc_access_on_pmi(unsigned int cpu);
+bool pmc_access_on_pmi_local(void);
 
 #endif /* _PMI_H */

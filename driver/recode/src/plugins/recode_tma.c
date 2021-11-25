@@ -74,7 +74,7 @@ DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
 #define SUB_SAFE(a, b) (a > b ? a - b : 0)
 
 /* Scale factor */
-#define SFACT 1000
+#define SFACT 100
 
 #define EVT_IDX(pmcs, event)                                                   \
 	(pmcs[this_cpu_read(pcpu_pmcs_index_array[HW_EVT_IDX(event)])])
@@ -157,42 +157,6 @@ DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
 
 #define computable_tma(tma, mask) ((tma & mask) == tma)
 
-#define TMA_NR_L0_FORMULAS 4
-#define TMA_L0_FORMULAS                                                        \
-	X_TMA_LEVELS_FORMULAS(l0_bb, 0)                                        \
-	X_TMA_LEVELS_FORMULAS(l0_bs, 1)                                        \
-	X_TMA_LEVELS_FORMULAS(l0_re, 2)                                        \
-	X_TMA_LEVELS_FORMULAS(l0_fb, 3)
-
-#define TMA_NR_L1_FORMULAS 6
-#define TMA_L1_FORMULAS                                                        \
-	X_TMA_LEVELS_FORMULAS(l0_bb, 0)                                        \
-	X_TMA_LEVELS_FORMULAS(l0_bs, 1)                                        \
-	X_TMA_LEVELS_FORMULAS(l0_re, 2)                                        \
-	X_TMA_LEVELS_FORMULAS(l0_fb, 3)                                        \
-	X_TMA_LEVELS_FORMULAS(l1_mb, 4)                                        \
-	X_TMA_LEVELS_FORMULAS(l1_cb, 5)
-
-#define TMA_NR_L2_FORMULAS 4
-#define TMA_L2_FORMULAS                                                        \
-	X_TMA_LEVELS_FORMULAS(l2_l1b, 0)                                       \
-	X_TMA_LEVELS_FORMULAS(l2_l2b, 1)                                       \
-	X_TMA_LEVELS_FORMULAS(l2_l3b, 2)                                       \
-	X_TMA_LEVELS_FORMULAS(l2_dramb, 3)
-
-#define TMA_NR_L3_FORMULAS 10
-#define TMA_L3_FORMULAS                                                        \
-	X_TMA_LEVELS_FORMULAS(l0_bb, 0)                                        \
-	X_TMA_LEVELS_FORMULAS(l0_bs, 1)                                        \
-	X_TMA_LEVELS_FORMULAS(l0_re, 2)                                        \
-	X_TMA_LEVELS_FORMULAS(l0_fb, 3)                                        \
-	X_TMA_LEVELS_FORMULAS(l1_mb, 4)                                        \
-	X_TMA_LEVELS_FORMULAS(l1_cb, 5)                                        \
-	X_TMA_LEVELS_FORMULAS(l2_l1b, 6)                                       \
-	X_TMA_LEVELS_FORMULAS(l2_l2b, 7)                                       \
-	X_TMA_LEVELS_FORMULAS(l2_l3b, 8)                                       \
-	X_TMA_LEVELS_FORMULAS(l2_dramb, 9)
-
 size_t get_metrics_size_by_level(uint level)
 {
 	switch (level) {
@@ -212,13 +176,18 @@ size_t get_metrics_size_by_level(uint level)
 static inline __attribute__((always_inline)) bool
 compute_tms_l0(const struct pmcs_collection *collection)
 {
+	uint k;
 	const pmc_ctr *pmcs = collection->pmcs;
 
-	pr_debug("TMA on cpu %u\n", smp_processor_id());
-	pr_debug("L0_FB: %llu\n", tma_eval_l0_fb(pmcs));
-	pr_debug("L0_BS: %llu\n", tma_eval_l0_bs(pmcs));
-	pr_debug("L0_RE: %llu\n", tma_eval_l0_re(pmcs));
-	pr_debug("L0_BB: %llu\n", tma_eval_l0_bb(pmcs));
+	pr_info("TMA on cpu %u\n", smp_processor_id());
+	pr_info("L0_FB: %llu\n", tma_eval_l0_fb(pmcs));
+	pr_info("L0_BS: %llu\n", tma_eval_l0_bs(pmcs));
+	pr_info("L0_RE: %llu\n", tma_eval_l0_re(pmcs));
+	pr_info("L0_BB: %llu\n", tma_eval_l0_bb(pmcs));
+
+	pr_info("PMCS: ");
+	for (k = 0; k < collection->cnt; ++k)
+		pr_cont(" %llu", collection->pmcs[k]);
 
 	//return tma_eval_l0_re(collection->pmcs) < 300 &&
 	//       tma_eval_l0_bb(collection->pmcs) > 30;
@@ -228,6 +197,9 @@ compute_tms_l0(const struct pmcs_collection *collection)
 static inline __attribute__((always_inline)) bool
 compute_tms_l1(const struct pmcs_collection *collection)
 {
+	/* TODO REMOVE */
+	compute_tms_l0(collection);
+
 	pr_debug("CBC: %llu\n", tma_eval_l1_mid_cbc(collection->pmcs));
 	pr_debug("BBC: %llu\n", tma_eval_l1_mid_bbc(collection->pmcs));
 	pr_debug("MBF: %llu\n", tma_eval_l1_mid_mbf(collection->pmcs));
@@ -346,12 +318,13 @@ void update_events_index_local(struct hw_events *events)
 {
 	u8 idx, tmp;
 
+	pr_info("Update event - mask %llx (cnt: %u)", events->mask,
+		events->cnt);
+
 	// TODO Improve code
 	pr_debug("Updating index_array on cpu %u\n", smp_processor_id());
 	for (idx = 0, tmp = 0; tmp < events->cnt; ++idx) {
 		if (events->mask & BIT_ULL(idx)) {
-			// pr_debug("Found event on position: %u, val: %u\n", idx,
-			// 	 tmp + 3);
 			this_cpu_write(pcpu_pmcs_index_array[idx], tmp + 3);
 			tmp++;
 		}
@@ -398,7 +371,7 @@ int recode_tma_init(void)
 
 	gbl_tma_levels[1].hw_evts = TMA_HW_EVTS_LEVEL_1;
 	gbl_tma_levels[1].hw_cnt = k;
-	gbl_tma_levels[1].next = 3;
+	gbl_tma_levels[1].next = 2;
 	gbl_tma_levels[1].prev = 0;
 	gbl_tma_levels[1].compute = compute_tms_l1;
 
@@ -409,8 +382,8 @@ int recode_tma_init(void)
 	if (!TMA_HW_EVTS_LEVEL_2)
 		return -ENOMEM;
 
-	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(ca_stalls_l1d_miss);
 	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(ca_stalls_mem_any);
+	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(ca_stalls_l1d_miss);
 	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(ca_stalls_l2_miss);
 	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(ca_stalls_l3_miss);
 	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(l2_hit);
@@ -439,7 +412,6 @@ int recode_tma_init(void)
 	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ea_2_ports_util);
 	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ca_stalls_mem_any);
 	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ca_stalls_l1d_miss);
-	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ca_stalls_mem_any);
 	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ca_stalls_l2_miss);
 	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ca_stalls_l3_miss);
 	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(l2_hit);
@@ -448,24 +420,35 @@ int recode_tma_init(void)
 	gbl_tma_levels[3].hw_evts = TMA_HW_EVTS_LEVEL_3;
 	gbl_tma_levels[3].hw_cnt = k;
 	gbl_tma_levels[3].next = 3;
-	gbl_tma_levels[3].prev = 1;
+	gbl_tma_levels[3].prev = 3;
 	gbl_tma_levels[3].compute = compute_tms_l3;
 
-	/* Setup recode callbacks */
-	/* NOTE - This will be changed into a function */
-	// recode_callbacks.on_pmi = on_pmi_callback;
-	// recode_callbacks.on_hw_events_change = update_events_index_on_this_cpu;
+	register_on_hw_events_setup_callback(update_events_index_local);
 
 	for (k = 0; k < TMA_MAX_LEVEL; ++k) {
+		pr_info("Request event creation (cnt %u)\n",
+			gbl_tma_levels[k].hw_cnt);
+
 		gbl_tma_levels[k].hw_events = create_hw_events(
 			gbl_tma_levels[k].hw_evts, gbl_tma_levels[k].hw_cnt);
 
 		if (!gbl_tma_levels[k].hw_events)
 			goto no_events;
+
+		pr_info("Created event %llx (cnt %u)\n",
+			gbl_tma_levels[k].hw_events->mask,
+			gbl_tma_levels[k].hw_events->cnt);
 	}
 
+#define FORCE_LEVEL 3
+
 	pr_warn("*** HARDCODED TMA LEVEL 3 ***\n");
-	setup_hw_events_global(gbl_tma_levels[3].hw_events);
+	for_each_possible_cpu (k)
+		per_cpu(pcpu_current_tma_lvl, k) = FORCE_LEVEL;
+
+	setup_hw_events_global(gbl_tma_levels[FORCE_LEVEL].hw_events);
+
+	pr_warn("*** LEVEL SWITCH IS DISABLED ***\n");
 
 	return 0;
 
@@ -494,18 +477,55 @@ static __always_inline void switch_tma_level(uint prev_level, uint next_level)
 
 	/* TODO - This must be atomic */
 	// TODO Monitor if right
-	setup_hw_events_local(gbl_tma_levels[next_level].hw_events);
 	this_cpu_write(pcpu_current_tma_lvl, next_level);
+	setup_hw_events_local(gbl_tma_levels[next_level].hw_events);
 }
 
+/* TODO Restore */
 static void evaluate_tma_level(struct pmcs_collection *collection)
+{
+	// uint level = this_cpu_read(pcpu_current_tma_lvl);
+
+	// gbl_tma_levels[level].compute(collection);
+
+	// if (gbl_tma_levels[level].compute(collection))
+	// 	switch_tma_level(level, gbl_tma_levels[level].next);
+	// else
+	// 	switch_tma_level(level, gbl_tma_levels[level].prev);
+}
+
+/* TODO - The mask is now replaced by the level, but this should be changed */
+void compute_tma_histotrack_smp(struct pmcs_collection *pmcs_collection,
+				atomic_t (*histotrack)[TRACK_PRECISION],
+				atomic_t *nr_samples)
 {
 	uint level = this_cpu_read(pcpu_current_tma_lvl);
 
-	if (gbl_tma_levels[level].compute(collection))
-		switch_tma_level(level, gbl_tma_levels[level].next);
-	else
-		switch_tma_level(level, gbl_tma_levels[level].prev);
+#define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
+	atomic_inc(&histotrack[idx][track_index(                               \
+		tma_eval_##name(pmcs_collection->pmcs))]);
+
+	switch (level) {
+	case 0:
+		TMA_L0_FORMULAS
+		break;
+	case 1:
+		TMA_L1_FORMULAS
+		break;
+	case 2:
+		TMA_L2_FORMULAS
+		break;
+	case 3:
+		TMA_L3_FORMULAS
+		break;
+	default:
+		pr_warn("Unrecognized TMA level %u\n", level);
+		return;
+	}
+#undef X_TMA_LEVELS_FORMULAS
+	atomic_inc(nr_samples);
+
+	evaluate_tma_level(pmcs_collection);
 }
 
 /* TODO - The mask is now replaced by the level, but this should be changed */
@@ -513,6 +533,8 @@ void compute_tma_metrics_smp(struct pmcs_collection *pmcs_collection,
 			     struct tma_collection *tma_collection)
 {
 	uint level = this_cpu_read(pcpu_current_tma_lvl);
+
+	// pr_info("@%u (%u) %s lvl %u\n", smp_processor_id(), current->pid, __func__, level);
 
 #define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
 	atomic64_add(tma_eval_##name(pmcs_collection->pmcs),                   \

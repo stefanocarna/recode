@@ -28,7 +28,7 @@ static void pmu_hook_sched_in(void *data, bool preempt,
 	if (!pmu_enabled)
 		return;
 
-	reset_hw_events_local();
+	// reset_hw_events_local();
 }
 
 static void pmu_hook_proc_exit(void *data, struct task_struct *p)

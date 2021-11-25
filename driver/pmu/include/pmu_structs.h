@@ -47,6 +47,8 @@ struct pmus_metadata {
 	u64 perf_global_ctrl;
 	bool pmcs_active;
 
+	u64 ctx_cnt;
+
 	pmc_ctr pmi_reset_value;
 	uint pmi_partial_cnt;
 

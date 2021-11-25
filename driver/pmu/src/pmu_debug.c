@@ -35,6 +35,7 @@ void debug_pmu_state(void)
 
 	put_cpu();
 }
+EXPORT_SYMBOL(debug_pmu_state);
 
 void reset_pmc_local(void *dummy)
 {

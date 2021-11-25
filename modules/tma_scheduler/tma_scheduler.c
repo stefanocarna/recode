@@ -1,16 +1,59 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
+#include "recode.h"
+#include "hooks.h"
+#include "device/proc.h"
+
+#include "plugins/recode_tma.h"
+#include "tma_scheduler.h"
 
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 
-#include "device/proc.h"
-#include "recode.h"
-
-#include "hooks.h"
-#include "plugins/recode_tma.h"
-#include "tma_scheduler.h"
-
 enum recode_state __read_mostly recode_state = OFF;
+
+void aggregate_tma_profile(struct tma_profile *proc_profile,
+			   struct tma_profile *group_profile)
+{
+	uint m, k;
+
+	for (m = 0; m < TMA_NR_L3_FORMULAS; ++m)
+		for (k = 0; k < TRACK_PRECISION; ++k)
+			atomic_add(atomic_read(&proc_profile->histotrack[m][k]),
+				   &group_profile->histotrack[m][k]);
+}
+
+__always_inline struct tma_profile *create_process_profile(void)
+{
+	return kmalloc(sizeof(struct tma_profile), GFP_KERNEL);
+}
+
+__always_inline void destroy_process_profile(struct tma_profile *profile)
+{
+	kfree(profile);
+}
+
+void print_tma_metrics(uint id, struct tma_profile *profile)
+{
+	uint k;
+	u64 samples;
+
+	if (!profile)
+		return;
+
+	samples = atomic_read(&profile->nr_samples);
+
+	pr_info("GROUP: %u - samples %llu\n", id, samples);
+
+#define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
+	pr_info("%s:  0  10  20  30  40  50  60  70  80  90\n               ", \
+		#name);                                                        \
+	for (k = 0; k < TRACK_PRECISION; ++k) {                                \
+		pr_cont(" [%u]", atomic_read(&profile->histotrack[idx][k]));   \
+	}
+
+	TMA_L3_FORMULAS
+#undef X_TMA_LEVELS_FORMULAS
+}
 
 void recode_set_state(uint state)
 {
@@ -18,12 +61,24 @@ void recode_set_state(uint state)
 		return;
 
 	switch (state) {
+	case KILL:
+		signal_to_all_groups(SIGKILL);
+		fallthrough;
 	case OFF:
 		pr_info("Recode state: OFF\n");
-		recode_state = state;
+		recode_state = OFF;
 		disable_pmcs_global();
+		disable_scheduler();
+		/* Enable all ? */
+		// schedule_all_groups();
 		return;
 	case SYSTEM:
+		if (!nr_groups) {
+			pr_warn("Cannot enable Recode withoutr groups\n");
+			break;
+		}
+
+		enable_scheduler();
 		pr_info("Recode ready for SYSTEM\n");
 		break;
 	default:
@@ -37,101 +92,58 @@ void recode_set_state(uint state)
 /* Register process to activity profiler  */
 int attach_process(struct task_struct *tsk)
 {
-	int err;
-	struct tma_profile *profile;
-
-	/* Create group and get payload*/
-	profile = (struct tma_profile *)create_group(tsk,
-						   sizeof(struct tma_profile));
-
-	if (!profile)
-		goto no_payload;
-
-	/* atomic64_t files should be initialized to 0 at allocation */
-
-	err = track_thread(tsk);
-
-	if (err)
-no_payload:
-		pr_info("Error (%d) while Attaching process: [%u:%u]\n", err,
-			tsk->tgid, tsk->pid);
-	else
-		pr_info("Attaching process: [%u:%u]\n", tsk->tgid, tsk->pid);
-
-	return err;
-}
-
-static void hook_sched_in(ARGS_SCHED_IN)
-{
-	uint cpu = get_cpu();
-
-	switch (recode_state) {
-	case OFF:
-		disable_pmcs_local(false);
-		goto end;
-	case SYSTEM:
-		enable_pmcs_local(false);
-		break;
-	default:
-		pr_warn("Invalid state on cpu %u... disabling PMCs\n", cpu);
-		disable_pmcs_local(false);
-		goto end;
-	}
-
-end:
-	put_cpu();
-}
-
-static void hook_proc_exit(ARGS_PROC_EXIT)
-{
-	/* TODO This should change to the last process that leaves the group */
-	if (p && (p->pid == p->tgid))
-		destroy_group(p);
-}
-
-int register_system_hooks(void)
-{
 	int err = 0;
+	void *data;
+	struct group_entity *group;
 
-	err = register_hook(SCHED_IN, hook_sched_in);
+	data = kmalloc(sizeof(struct tma_profile), GFP_KERNEL);
 
-	if (err) {
-		pr_info("Cannot register SCHED_IN callback\n");
-		goto end;
-	} else {
-		pr_info("Registered SCHED_IN callback\n");
-	}
+	if (!data)
+		goto no_data;
 
-	err = register_hook(PROC_EXIT, hook_proc_exit);
+	/* Create group and get data */
+	group = create_group(tsk->pid, data);
+	if (!group)
+		goto no_group;
 
-	if (err) {
-		pr_info("Cannot register PROC_EXIT callback\n");
-		goto end;
-	} else {
-		pr_info("Registered PROC_EXIT callback\n");
-	}
+	err = register_process_to_group(tsk->pid, group,
+					create_process_profile());
+	if (err)
+		goto no_register;
 
-end:
+	/* Suspend process here */
+	signal_to_group(SIGSTOP, group->id);
+
+	pr_info("Attaching process: [%u:%u]\n", tsk->tgid, tsk->pid);
+	return 0;
+
+no_register:
+	destroy_group(tsk->pid);
+no_group:
+	kfree(data);
+no_data:
+	pr_info("Error (%d) while Attaching process: [%u:%u]\n", err, tsk->tgid,
+		tsk->pid);
 	return err;
-}
-
-void unregister_system_hooks(void)
-{
-	unregister_hook(PROC_EXIT, hook_proc_exit);
-	unregister_hook(SCHED_IN, hook_sched_in);
 }
 
 static void on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
 {
-
-	struct tma_collection *tma_collection;
+	// u64 sound = 0;
+	struct group_entity *group;
+	struct tma_profile *profile;
 	struct pmcs_collection *pmcs_collection;
 
 	// atomic_inc(&pmis);
+	// pr_info("Got PMI on TMA: %u:%u\n", current->tgid, current->pid);
 
-	tma_collection = has_group_payload(current);
+	group = get_group_by_proc(current->pid);
+	if (!group)
+		return;
 
-	if (!tma_collection)
+	profile = (struct tma_profile *)group->data;
+
+	if (!profile)
 		return;
 
 	/* pmcs_collection should be correct as long as it accessed here */
@@ -142,11 +154,31 @@ static void on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
 		return;
 	}
 
-	pr_debug("Got PMI on TMA\n");
+	// compute_tma_metrics_smp(pmcs_collection, &profile->tma);
+	compute_tma_histotrack_smp(pmcs_collection, profile->histotrack,
+				   &profile->nr_samples);
 
-	// u64 mask = pmcs_collection->mask;
+	/* TODO Check soundness */
 
-	compute_tma_metrics_smp(pmcs_collection, tma_collection);
+	// if (atomic64_read(&profile->tma.nr_samples)) {
+	// 	sound += atomic64_read(&profile->tma.metrics[0]);
+	// 	sound += atomic64_read(&profile->tma.metrics[1]);
+	// 	sound += atomic64_read(&profile->tma.metrics[2]);
+	// 	sound += atomic64_read(&profile->tma.metrics[3]);
+
+	// 	sound /= atomic64_read(&profile->tma.nr_samples);
+
+	// 	/* TODO Remove */
+	// 	if (sound != 1000) {
+	// 		pr_err("ERR sound: %llu\nRESET: %llx - MULTIPX %u\n",
+	// 		       sound, pmus_metadata->pmi_reset_value,
+	// 		       pmus_metadata->multiplexing);
+	// 	} else {
+	// 		// pr_warn("RESET: %llx - MULTIPX %u\n",
+	// 		//        pmus_metadata->pmi_reset_value,
+	// 		//        pmus_metadata->multiplexing);
+	// 	}
+	// }
 }
 
 static __init int recode_init(void)
@@ -168,6 +200,8 @@ static __init int recode_init(void)
 	err = recode_init_proc();
 	if (err)
 		goto no_proc;
+
+	register_proc_group();
 
 	err = recode_tma_init();
 	if (err)
@@ -192,6 +226,10 @@ no_groups:
 
 static void __exit recode_exit(void)
 {
+	pmudrv_set_state(false);
+
+	recode_set_state(OFF);
+
 	/* Unregister callback */
 	register_on_pmi_callback(NULL);
 

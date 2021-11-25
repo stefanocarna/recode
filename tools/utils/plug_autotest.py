@@ -41,6 +41,15 @@ def setParserArguments(parser):
     )
 
     plug_parser.add_argument(
+        "-f",
+        "--file",
+        metavar="F",
+        type=str,
+        required=False,
+        help="Save the results into F",
+    )
+
+    plug_parser.add_argument(
         "-c",
         "--cpu",
         type=int,
@@ -124,53 +133,38 @@ def compute(args, config):
     if not validate_args(args):
         return cmdList
 
-    if args.run_attack:
-        prog, args = action_run_attack(args.run_attack)
-        execStr = ("profiler -x " + prog).split()
-        execStr.append("-a")
-        execStr.append(args)
-        return [execStr]
+    # if args.run_attack:
+    #     prog, args = action_run_attack(args.run_attack)
+    #     execStr = ("profiler -x " + prog).split()
+    #     execStr.append("-a")
+    #     execStr.append(args)
+    #     return [execStr]
 
     cmdList.append("module -u".split())
-    cmdList.append("module -c SECURITY".split())
+    cmdList.append("module -cc TMA".split())
     cmdList.append("module -l".split())
-    cmdList.append("config -f 20".split())
-    cmdList.append("config -s tuning -tt FR".split())
 
-    prog, args = action_run_attack("fr1")
-
-    execStr = ("profiler -c 1 -t 5 -x " + prog).split()
-    execStr.append("-a")
-    execStr.append(args)
-    cmdList.append(execStr)
-
-    cmdList.append("config -s tuning -tt XL".split())
-
-    prog, args = action_run_attack("xp")
-    execStr = ("profiler -c 1 -t 5 -x " + prog).split()
-    execStr.append("-a")
-    execStr.append(args)
-    cmdList.append(execStr)
+    cmdList.append("config -f 26".split())
 
     cmdList.append("config -s system".split())
 
-    # execStr = ("profiler -x " + str(args.exec)).split()
-    # if args.args is not None:
-    #     execStr.append("-a")
-    #     execStr.append(str(args.args))
+    execStr = ("profiler -x " + str(args.exec)).split()
+    if args.args is not None:
+        execStr.append("-a")
+        execStr.append(str(args.args))
 
-    # if args.timeout is not None:
-    #     execStr.append("-t")
-    #     execStr.append(str(args.timeout))
+    if args.timeout is not None:
+        execStr.append("-t")
+        execStr.append(str(args.timeout))
 
-    # print("args", str(execStr))
+    print("args", str(execStr))
 
-    # cmdList.append(execStr)
-    # cmdList.append("config -s off".split())
+    cmdList.append(execStr)
+    cmdList.append("config -s off".split())
 
-    # if args.file is not None:
-    #     cmdList.append(("data -etma " + args.file).split())
+    if args.file is not None:
+        cmdList.append(("data -etma " + args.file).split())
 
-    # cmdList.append(("network -l -s " + args.file                                          ).split())
+    # cmdList.append(("network -s " + args.file).split())
 
     return cmdList

@@ -19,7 +19,7 @@ def setParserArguments(parser):
         "--state",
         type=str,
         required=False,
-        choices=["off", "tuning", "profile", "system", "idle", "reset"],
+        choices=["off", "tuning", "profile", "system", "idle", "reset", "kill"],
         help="Set the Recode state: (on) enabled, (off) disabled, (reset) off -> on",
     )
 
@@ -87,6 +87,8 @@ def action_state(action, type):
         value = "3"
     elif action == "idle":
         value = "4"
+    elif action == "kill":
+        value = "5"
     elif action == "reset":
         action_state("off")
         value = "2"

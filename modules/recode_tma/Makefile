@@ -45,7 +45,7 @@ RECODE_BASEDIR = $(DRIVER_PATH)/recode/src/
 # src
 # RECODE_SRCS := recode_module.o
 RECODE_SRCS += recode_config.o
-# RECODE_SRCS += recode_core.o
+RECODE_SRCS += recode_core.o
 RECODE_SRCS += recode_collector.o
 RECODE_SRCS += recode_groups.o
 #src/device
@@ -64,7 +64,7 @@ RECODE_PLUGINS_OBJS = $(addprefix $(RECODE_PLUGINS_BASEDIR), $(RECODE_PLUGINS_SR
 
 # Module objects
 
-MODNAME = tma_scheduler_module
+MODNAME = recode_tma_module
 obj-m = $(PMU_MODULE_DIR) $(MODNAME).o
 
 $(MODNAME)-objs = $(HOOKS_OBJS)
@@ -72,11 +72,7 @@ $(MODNAME)-objs = $(HOOKS_OBJS)
 $(MODNAME)-objs += $(RECODE_OBJS)
 $(MODNAME)-objs += $(RECODE_PLUGINS_OBJS)
 
-# Object of this module
-$(MODNAME)-objs += hooks.o
-$(MODNAME)-objs += proc.o
-$(MODNAME)-objs += scheduler.o
-$(MODNAME)-objs += tma_scheduler.o
+$(MODNAME)-objs += recode_tma.o
 
 ccflags-y = -I$(HOOKS_INCLUDES)
 ccflags-y += -I$(PMU_INCLUDES)
@@ -99,8 +95,7 @@ modules_install:
 
 clean:
 	@$(MAKE) -C $(KDIR) M=$(PWD) clean
-	rm -rf $($(MODNAME)-objs)
-	rm -rf Module.symvers modules.order
+	rm -rf   Module.symvers modules.order
 
 load:
 	for mod in $(shell cat modules.order); do sudo insmod $$mod; done
