@@ -117,12 +117,12 @@ static int insert_process_to_group_list(pid_t pid, struct group_entity *group,
 	group->nr_processes++;
 	spin_unlock_irqrestore(&group->lock, flags);
 
-	pr_info("[G] Add #p %u @g %u\n", pid, group->id);
+	pr_debug("[G] Add #p %u @g %u\n", pid, group->id);
 	return 0;
 }
 
-static struct proc_entity *remove_process_from_group_list(pid_t pid,
-					   struct group_entity *group)
+static struct proc_entity *
+remove_process_from_group_list(pid_t pid, struct group_entity *group)
 {
 	bool exist = false;
 	unsigned long flags;
@@ -140,7 +140,7 @@ static struct proc_entity *remove_process_from_group_list(pid_t pid,
 	spin_unlock_irqrestore(&group->lock, flags);
 
 	if (exist) {
-		pr_info("[G] Del #p %u @g %u\n", pid, group->id);
+		pr_debug("[G] Del #p %u @g %u\n", pid, group->id);
 		pentity = cur->proc;
 		kfree(cur);
 	}
@@ -164,7 +164,7 @@ static int insert_process_to_processes_map(struct proc_entity *pentity)
 	hash_add(proc_map, &pnode->node, pnode->key);
 	spin_unlock_irqrestore(&p_lock, flags);
 
-	pr_info("[P] Add #p %u @g %u\n", pentity->pid, pentity->group->id);
+	pr_debug("[P] Add #p %u @g %u\n", pentity->pid, pentity->group->id);
 
 	return 0;
 }
@@ -188,7 +188,7 @@ void remove_process_from_processes_map(pid_t pid, struct group_entity *group)
 
 	if (exist) {
 		kvfree(cur);
-		pr_info("[P] Del #p %u @g %u\n", pid, group->id);
+		pr_debug("[P] Del #p %u @g %u\n", pid, group->id);
 	}
 }
 
@@ -254,7 +254,7 @@ void *unregister_process_from_group(pid_t pid, struct group_entity *group)
 	return data;
 }
 
-struct group_entity *create_group(uint id, void *data)
+struct group_entity *create_group(char *gname, uint id, void *data)
 {
 	unsigned long flags;
 	struct group_node *gnode;
@@ -274,6 +274,10 @@ struct group_entity *create_group(uint id, void *data)
 	gentity->id = id;
 	gentity->data = data;
 	gentity->nr_processes = 0;
+
+	memcpy(gentity->name, gname, TASK_COMM_LEN);
+	gentity->name[TASK_COMM_LEN - 1] = '\0';
+
 	INIT_LIST_HEAD(&gentity->p_list);
 	spin_lock_init(&gentity->lock);
 
@@ -282,7 +286,7 @@ struct group_entity *create_group(uint id, void *data)
 	nr_groups++;
 	spin_unlock_irqrestore(&g_lock, flags);
 
-	pr_info("Created group %u\n", id);
+	pr_info("Created group %u [%s]\n", id, gname);
 	return gentity;
 
 no_entity:
@@ -366,7 +370,7 @@ struct group_entity *get_next_group_by_id(uint id)
 	}
 
 	hash_for_each(group_map, bkt, cur, node) {
-		pr_info("%s GROUP %u\n", __func__, cur->key);
+		pr_debug("%s GROUP %u\n", __func__, cur->key);
 		if (stop)
 			break;
 		if (cur->key == id)
@@ -380,6 +384,55 @@ struct group_entity *get_next_group_by_id(uint id)
 	return cur->group;
 }
 
+void start_group_stats(struct group_entity *group)
+{
+	struct proc_list *cur;
+	struct proc_entity *proc;
+	unsigned long flags;
+
+	spin_lock_irqsave(&group->lock, flags);
+
+	group->utime = 0;
+	group->stime = 0;
+	group->nr_active_tasks = 0;
+
+	list_for_each_entry(cur, &group->p_list, list) {
+		proc = cur->proc;
+		/* TODO Change */
+		proc->utime_snap = proc->task->utime;
+		proc->stime_snap = proc->task->stime;
+		// proc->group->nr_active_tasks = 0;
+
+		pr_debug("[%s] *-* P[%u] - uTIME: %llu, sTIME: %llu\n",
+			group->name, proc->pid, proc->utime_snap,
+			proc->stime_snap);
+	}
+	spin_unlock_irqrestore(&group->lock, flags);
+}
+
+void stop_group_stats(struct group_entity *group)
+{
+	struct proc_list *cur;
+	struct proc_entity *proc;
+	unsigned long flags;
+
+	spin_lock_irqsave(&group->lock, flags);
+	list_for_each_entry(cur, &group->p_list, list) {
+		proc = cur->proc;
+		proc->utime_snap = proc->task->utime - proc->utime_snap;
+		proc->stime_snap = proc->task->stime - proc->stime_snap;
+		/* TODO RESET */
+		proc->group->utime += proc->utime_snap;
+		proc->group->stime += proc->stime_snap;
+		if (proc->utime_snap || proc->stime_snap)
+			proc->group->nr_active_tasks++;
+		pr_debug("[%s] uTIME: %llu, sTIME: %llu <-- P[%u] - uTIME: %llu, sTIME: %llu\n",
+			group->name, proc->group->utime, proc->group->stime,
+			proc->pid, proc->utime_snap, proc->stime_snap);
+	}
+	spin_unlock_irqrestore(&group->lock, flags);
+}
+
 static void __signal_to_group(uint signal, struct group_entity *group)
 {
 	struct proc_list *cur;
@@ -391,7 +444,15 @@ static void __signal_to_group(uint signal, struct group_entity *group)
 	spin_unlock_irqrestore(&group->lock, flags);
 }
 
-void signal_to_group(uint signal, uint id)
+void signal_to_group(uint signal,  struct group_entity *group)
+{
+	if (!group)
+		return;
+
+	__signal_to_group(signal, group);
+}
+
+void signal_to_group_by_id(uint signal, uint id)
 {
 	struct group_entity *group = get_group_by_id(id);
 

@@ -443,7 +443,7 @@ int recode_tma_init(void)
 #define FORCE_LEVEL 3
 
 	pr_warn("*** HARDCODED TMA LEVEL 3 ***\n");
-	for_each_possible_cpu (k)
+	for_each_possible_cpu(k)
 		per_cpu(pcpu_current_tma_lvl, k) = FORCE_LEVEL;
 
 	setup_hw_events_global(gbl_tma_levels[FORCE_LEVEL].hw_events);
@@ -497,13 +497,16 @@ static void evaluate_tma_level(struct pmcs_collection *collection)
 /* TODO - The mask is now replaced by the level, but this should be changed */
 void compute_tma_histotrack_smp(struct pmcs_collection *pmcs_collection,
 				atomic_t (*histotrack)[TRACK_PRECISION],
+				atomic_t(*histotrack_comp),
 				atomic_t *nr_samples)
 {
 	uint level = this_cpu_read(pcpu_current_tma_lvl);
 
 #define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
 	atomic_inc(&histotrack[idx][track_index(                               \
-		tma_eval_##name(pmcs_collection->pmcs))]);
+		tma_eval_##name(pmcs_collection->pmcs))]);                     \
+	atomic_add(tma_eval_##name(pmcs_collection->pmcs),                     \
+		   &histotrack_comp[idx]);
 
 	switch (level) {
 	case 0:

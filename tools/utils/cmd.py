@@ -1,10 +1,14 @@
+import os
 import re
+import sys
+import time
 import subprocess
 from enum import IntEnum
 
 
 def clearText(text):
-    return re.sub(r'\x1b(\[.*?[@-~]|\].*?(\x07|\x1b\\))', '', text)
+    return re.sub(r"\x1b(\[.*?[@-~]|\].*?(\x07|\x1b\\))", "", text)
+
 
 class Pipe(IntEnum):
     OUT = 0
@@ -12,10 +16,10 @@ class Pipe(IntEnum):
     RET = 2
 
 
-def cmd(cmd_seq, type=None, sh=False, timeOut=None):
+def cmd(cmd_seq, type=None, sh=False, timeOut=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE):
     try:
         p = subprocess.Popen(
-            cmd_seq, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=sh
+            cmd_seq, stdout=stdout, stderr=stderr, shell=sh
         )
         p.wait(timeOut)
         if type == Pipe.OUT or type == Pipe.ERR:
@@ -34,10 +38,25 @@ def cmd(cmd_seq, type=None, sh=False, timeOut=None):
         return "", "", -1
 
 
+def dcmd(cmd_seq, sh=False):
+    try:
+        print("PID " + str(os.getpid()))
+        p = subprocess.Popen(cmd_seq, stdout=Pipe.OUT, stderr=Pipe.ERR, shell=sh)
+        # Never call
+        return p
+    except Exception as e:
+        print("An error occurred:" + str(e))
+        return None
+
+
 def icmd(cmd_seq, sh=False):
     try:
         p = subprocess.Popen(
-            cmd_seq, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE, shell=sh
+            cmd_seq,
+            stdout=subprocess.PIPE,
+            stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=sh,
         )
         return p
     except Exception as e:
@@ -46,12 +65,12 @@ def icmd(cmd_seq, sh=False):
 
 
 def xcmd(cmd_seq, sh=False):
-        process = icmd(cmd_seq, sh)
+    process = icmd(cmd_seq, sh)
 
-        while True:
-            output = clearText(process.stdout.readline().decode("utf-8"))
+    while True:
+        output = clearText(process.stdout.readline().decode("utf-8"))
 
-            if output == '' and process.poll() is not None:
-                break
-            if output:
-                print(output)
+        if output == "" and process.poll() is not None:
+            break
+        if output:
+            print(output)

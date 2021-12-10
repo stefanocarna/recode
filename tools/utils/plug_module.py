@@ -22,6 +22,16 @@ def setParserArguments(parser):
     plug_parser = parser.add_parser(PLUGIN_NAME, help=HELP_DESC)
 
     plug_parser.add_argument(
+        "-m",
+        "--module",
+        metavar="M",
+        nargs='?',
+        type=str,
+        required=False,
+        help="Select the module M and apply the required actions",
+    )
+
+    plug_parser.add_argument(
         "-l",
         "--load",
         action="store_true",
@@ -135,6 +145,9 @@ def compute(args, config):
         return False
 
     os.chdir(WD_PATH)
+
+    if (args.module):
+        os.chdir(WD_PATH + "/modules/" + args.module)
 
     if (args.unload):
         action_unload()

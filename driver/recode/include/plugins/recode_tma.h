@@ -49,15 +49,18 @@ struct tma_collection {
 };
 
 #define TRACK_DOMAIN 100
-#define TRACK_PRECISION 10
+#define TRACK_PRECISION 100
 #define TRACK_DIV (TRACK_DOMAIN / TRACK_PRECISION)
 #define track_index(x) (x / TRACK_DIV)
 
 struct tma_profile {
 	atomic_t histotrack[TMA_NR_L3_FORMULAS][TRACK_PRECISION];
+	atomic_t histotrack_comp[TMA_NR_L3_FORMULAS];
 	atomic_t nr_samples;
 	// struct tma_collection tma;
 	refcount_t counter;
+	/* CPU Stats */
+	u64 time;
 };
 
 int recode_tma_init(void);
@@ -74,7 +77,8 @@ void compute_tma_metrics_smp(struct pmcs_collection *pmcs_collection,
 			     struct tma_collection *tma_collection);
 
 void compute_tma_histotrack_smp(struct pmcs_collection *pmcs_collection,
-			     atomic_t (*histotrack)[TRACK_PRECISION], atomic_t *nr_samples);
-
+				atomic_t (*histotrack)[TRACK_PRECISION],
+				atomic_t(*histotrack_comp),
+				atomic_t *nr_samples);
 
 #endif /* _RECODE_TMA_H */

@@ -48,6 +48,7 @@ RECODE_SRCS += recode_config.o
 # RECODE_SRCS += recode_core.o
 RECODE_SRCS += recode_collector.o
 RECODE_SRCS += recode_groups.o
+RECODE_SRCS += power.o
 #src/device
 RECODE_SRCS += device/proc.o
 RECODE_SRCS += device/proc_cpus.o
@@ -74,9 +75,19 @@ $(MODNAME)-objs += $(RECODE_PLUGINS_OBJS)
 
 # Object of this module
 $(MODNAME)-objs += hooks.o
-$(MODNAME)-objs += proc.o
-$(MODNAME)-objs += scheduler.o
+# $(MODNAME)-objs += proc.o
+$(MODNAME)-objs += proc_groups.o
+$(MODNAME)-objs += proc_csched.o
+$(MODNAME)-objs += stats.o
+$(MODNAME)-objs += algo.o
+# $(MODNAME)-objs += scheduler.o
+# $(MODNAME)-objs += partition.o
 $(MODNAME)-objs += tma_scheduler.o
+
+$(MODNAME)-objs += scheduler/scheduler.o
+$(MODNAME)-objs += scheduler/attuate.o
+$(MODNAME)-objs += scheduler/evaluate.o
+$(MODNAME)-objs += scheduler/consolidate.o
 
 ccflags-y = -I$(HOOKS_INCLUDES)
 ccflags-y += -I$(PMU_INCLUDES)

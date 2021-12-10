@@ -90,7 +90,7 @@ void recode_set_state(uint state)
 }
 
 /* Register process to activity profiler  */
-int attach_process(struct task_struct *tsk)
+int attach_process(struct task_struct *tsk, char *gname)
 {
 	int err = 0;
 	void *data;
@@ -102,7 +102,7 @@ int attach_process(struct task_struct *tsk)
 		goto no_data;
 
 	/* Create group and get data */
-	group = create_group(tsk->pid, data);
+	group = create_group(gname, tsk->pid, data);
 	if (!group)
 		goto no_group;
 
@@ -112,7 +112,7 @@ int attach_process(struct task_struct *tsk)
 		goto no_register;
 
 	/* Suspend process here */
-	signal_to_group(SIGSTOP, group->id);
+	signal_to_group_by_id(SIGSTOP, group->id);
 
 	pr_info("Attaching process: [%u:%u]\n", tsk->tgid, tsk->pid);
 	return 0;
@@ -156,6 +156,7 @@ static void on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
 
 	// compute_tma_metrics_smp(pmcs_collection, &profile->tma);
 	compute_tma_histotrack_smp(pmcs_collection, profile->histotrack,
+				   profile->histotrack_comp,
 				   &profile->nr_samples);
 
 	/* TODO Check soundness */
@@ -202,6 +203,7 @@ static __init int recode_init(void)
 		goto no_proc;
 
 	register_proc_group();
+	register_proc_csched();
 
 	err = recode_tma_init();
 	if (err)
@@ -226,9 +228,9 @@ no_groups:
 
 static void __exit recode_exit(void)
 {
-	pmudrv_set_state(false);
-
 	recode_set_state(OFF);
+
+	pmudrv_set_state(false);
 
 	/* Unregister callback */
 	register_on_pmi_callback(NULL);

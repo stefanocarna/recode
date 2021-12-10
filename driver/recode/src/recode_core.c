@@ -226,7 +226,7 @@ skip:
 }
 
 /* Register process to activity profiler  */
-int attach_process(struct task_struct *tsk)
+int attach_process(struct task_struct *tsk, char *gname)
 {
 	int err;
 

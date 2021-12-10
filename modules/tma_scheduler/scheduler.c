@@ -5,6 +5,7 @@
 #include <linux/jiffies.h>
 #include <linux/slab.h>
 
+#include "power.h"
 #include "hooks.h"
 #include "recode.h"
 #include "plugins/recode_tma.h"
@@ -12,10 +13,15 @@
 #include "tma_scheduler.h"
 
 struct group_step *gsteps;
+/* TODO INIT! */
+struct group_evaluation *g_evaluations;
+int nr_g_evaluations;
+int cur_g_evaluation;
+
 uint nr_gsteps;
 uint cur_gsteps;
 
-static bool init;
+bool timer_init;
 static ktime_t kt_interval;
 static struct hrtimer timer;
 
@@ -23,10 +29,14 @@ struct session_step {
 	uint r;
 	uint **groups;
 	size_t nr_groups;
+	/* CPU Stats */
+	u64 cpu_used_time;
+	u64 cpu_total_time;
 };
 
 struct sched_conf {
 	bool init;
+	bool warmup;
 	uint *groups;
 	uint nr_groups;
 	struct session_step *sessions;
@@ -60,20 +70,31 @@ void fillSet(int data[], int start, int end, int index, int r)
 	}
 }
 
-static void signal_to_group_set(uint signal, uint *groups, size_t nr)
+void start_current_step(void)
 {
-	uint k;
+	int k;
+	uint *groups;
+	struct session_step *ses = &sched_conf.sessions[sched_conf.cur_session];
 
-	for (k = 0; k < nr; ++k) {
-		pr_info("Signal %s to %u\n",
-			signal == SIGCONT ? "CONT" : "STOP", groups[k]);
-		signal_to_group(signal, groups[k]);
+	read_cpu_stats(&ses->cpu_used_time, &ses->cpu_total_time);
+
+	RR_START();
+
+	groups = ses->groups[sched_conf.cur_step];
+
+	for (k = 0; k < ses->r; ++k) {
+		start_group_stats(get_group_by_id(groups[k]));
+		signal_to_group_by_id(SIGCONT, groups[k]);
 	}
 }
 
 void stop_previous_step(void)
 {
+	int k;
 	uint session, step;
+	uint *groups;
+	struct session_step *ses;
+	u64 used_time, total_time;
 
 	if (sched_conf.cur_step == 0) {
 		session = sched_conf.cur_session - 1;
@@ -83,14 +104,41 @@ void stop_previous_step(void)
 		step = sched_conf.cur_step - 1;
 	}
 
-	signal_to_group_set(SIGSTOP, sched_conf.sessions[session].groups[step],
-			    sched_conf.sessions[session].r);
+	ses = &sched_conf.sessions[session];
+
+	read_cpu_stats(&used_time, &total_time);
+	ses->cpu_used_time = used_time - ses->cpu_used_time;
+	ses->cpu_total_time = total_time - ses->cpu_total_time;
+
+	pr_info("** CPU USAGE:  %llu / %llu\n", ses->cpu_used_time, ses->cpu_total_time);
+
+	RR_STOP();
+
+	groups = ses->groups[step];
+
+	for (k = 0; k < ses->r; ++k) {
+		stop_group_stats(get_group_by_id(groups[k]));
+		signal_to_group_by_id(SIGSTOP, groups[k]);
+	}
+}
+
+void clear_group_profiles(void)
+{
+	uint k;
+
+	for (k = 0; k < sched_conf.nr_groups; ++k) {
+		memset(get_group_by_id(sched_conf.groups[k])->data, 0,
+		       sizeof(struct tma_profile));
+	}
 }
 
 void save_profile_previous_step(void)
 {
 	uint *groups;
 	uint k, session, step;
+	struct group_entity *group;
+	struct tma_profile *profile;
+	struct session_step *ses;
 
 	if (sched_conf.cur_step == 0) {
 		session = sched_conf.cur_session - 1;
@@ -100,22 +148,43 @@ void save_profile_previous_step(void)
 		step = sched_conf.cur_step - 1;
 	}
 
-	groups = sched_conf.sessions[session].groups[step];
+	ses = &sched_conf.sessions[session];
+	groups = ses->groups[step];
 
-	for (k = 0; k < sched_conf.sessions[session].r; ++k) {
+	for (k = 0; k < ses->r; ++k) {
 		gsteps[cur_gsteps].id = groups[k];
+
+		/* Alloc and fill group set */
 		gsteps[cur_gsteps].groups_id =
-			kmalloc_array(sched_conf.sessions[session].r,
-				      sizeof(uint), GFP_KERNEL);
+			kmalloc_array(ses->r, sizeof(uint), GFP_KERNEL);
 		memcpy(gsteps[cur_gsteps].groups_id, groups,
-		       array_size(sched_conf.sessions[session].r,
-				  sizeof(uint)));
-		gsteps[cur_gsteps].nr_groups = sched_conf.sessions[session].r;
-		memcpy(&gsteps[cur_gsteps].profile,
-		       get_group_by_id(groups[k])->data,
+		       array_size(ses->r, sizeof(uint)));
+		gsteps[cur_gsteps].nr_groups = ses->r;
+
+		/* Copy the group profile data, thus it's aggreagted */
+		group = get_group_by_id(groups[k]);
+
+		memcpy(gsteps[cur_gsteps].gname, group->name, TASK_COMM_LEN);
+		gsteps[cur_gsteps].nr_active_tasks = group->nr_active_tasks;
+
+		profile = group->data;
+		memcpy(&gsteps[cur_gsteps].profile, profile,
 		       sizeof(struct tma_profile));
+
+		gsteps[cur_gsteps].cpu_time = ses->cpu_used_time;
+		gsteps[cur_gsteps].total_time = ses->cpu_total_time;
+		gsteps[cur_gsteps].profile.time = group->utime + group->stime;
+
+		rapl_read_stats(&gsteps[cur_gsteps].rapl);
+
+		/* Reset the group profile */
+		memset(profile, 0, sizeof(struct tma_profile));
+		group->utime = 0;
+		group->stime = 0;
 		cur_gsteps++;
 	}
+
+	// RR_PRINT(RAPL_PRINT_ALL);
 }
 
 size_t nr_sets(uint n, uint r)
@@ -182,6 +251,8 @@ static bool init_schedule(void)
 	kfree(tmp_set);
 	sched_conf.init = true;
 
+	RR_INIT_ALL();
+
 	return true;
 }
 
@@ -192,29 +263,41 @@ bool schedule_next_group(void)
 		if (!init_schedule())
 			return false;
 
+	if (!sched_conf.warmup) {
+		signal_to_all_groups(SIGCONT);
+		sched_conf.warmup = true;
+		pr_info("*** WARM-UP ***\n");
+		return true;
+	}
+
 	/* First iteration */
-	if (!sched_conf.cur_step && !sched_conf.cur_session)
+	if (!sched_conf.cur_step && !sched_conf.cur_session) {
+		signal_to_all_groups(SIGSTOP);
+		pr_info("*** START-SCHEDULER ***\n");
+		clear_group_profiles();
 		goto skip_stop;
+	}
 
 	stop_previous_step();
 
 	save_profile_previous_step();
 
+	pr_info("[CO-SCHED] **END**\n\n");
+
 	/* End of the session */
 	if (sched_conf.cur_session == sched_conf.nr_groups) {
 		signal_to_all_groups(SIGKILL);
-		init = false;
+		sched_conf.init = false;
+		sched_conf.warmup = false;
 		return false;
 	}
 
 skip_stop:
-	pr_info("Sess: %u - Step: %u - r: %u\n", sched_conf.cur_session,
-		sched_conf.cur_step,
+	pr_info("[CO-SCHED] **START** (Ss: %u - St: %u - R: %u)\n",
+		sched_conf.cur_session, sched_conf.cur_step,
 		sched_conf.sessions[sched_conf.cur_session].r);
-	signal_to_group_set(SIGCONT,
-			    sched_conf.sessions[sched_conf.cur_session]
-				    .groups[sched_conf.cur_step],
-			    sched_conf.sessions[sched_conf.cur_session].r);
+
+	start_current_step();
 
 	/* Move to next session */
 	if (sched_conf.cur_step ==
@@ -227,11 +310,6 @@ skip_stop:
 		sched_conf.cur_step++;
 	}
 
-	pr_info("END Sess: %u - Step: %u - r: %u\n", sched_conf.cur_session,
-		sched_conf.cur_step,
-		sched_conf.sessions[sched_conf.cur_session].r);
-
-	pr_info("GUARD\n");
 	return true;
 }
 
@@ -284,12 +362,12 @@ void init_schedule_tick(void)
 	kt_interval = ktime_set(3, 100000000); // 0s 100000000ns = 100ms
 	hrtimer_init(&timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_SOFT);
 	timer.function = hrtimer_hander;
-	init = true;
+	timer_init = true;
 }
 
 void enable_scheduler(void)
 {
-	if (!init)
+	if (!timer_init)
 		init_schedule_tick();
 
 	hrtimer_start(&timer, kt_interval, HRTIMER_MODE_REL_SOFT);
@@ -298,5 +376,5 @@ void enable_scheduler(void)
 void disable_scheduler(void)
 {
 	hrtimer_try_to_cancel(&timer);
-	init = false;
+	timer_init = false;
 }

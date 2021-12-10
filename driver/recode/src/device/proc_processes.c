@@ -10,28 +10,38 @@ static ssize_t processes_write(struct file *file,
 {
 	int ret;
 	struct task_struct *ts;
-	pid_t pidp;
+	char *safe_buf;
 
-	if (kstrtoint_from_user(buffer, count, 0, &pidp)) {
+	pid_t pidp;
+	char namep[TASK_COMM_LEN];
+
+	safe_buf = memdup_user_nul(buffer, count);
+	if (IS_ERR(safe_buf))
+		return PTR_ERR(safe_buf);
+
+	ret = sscanf(safe_buf, "%u:%s", &pidp, namep);
+	if (ret != 2) {
 		ret = -EFAULT;
-		goto skip;
+		goto err_scan;
 	}
 
-        /* Retrieve pid task_struct */
+	/* Retrieve pid task_struct */
 	ts = get_pid_task(find_get_pid(pidp), PIDTYPE_PID);
 	if (!ts) {
 		pr_info("Cannot find task_struct for pid %u\n", pidp);
 		ret = -EINVAL;
-		goto skip;
+		goto err_pid;
 	}
 
-        attach_process(ts);
+	attach_process(ts, namep);
 
 	put_task_struct(ts);
 
 	ret = count;
 
-skip:
+err_pid:
+err_scan:
+	kfree(safe_buf);
 	return ret;
 }
 

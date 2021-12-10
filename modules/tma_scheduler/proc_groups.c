@@ -8,7 +8,7 @@ static void *groups_seq_start(struct seq_file *m, loff_t *pos)
 {
 	loff_t *spos;
 
-	if (*pos >= nr_gsteps)
+	if (*pos >= nr_g_evaluations)
 		return NULL;
 
 	spos = kmalloc(sizeof(loff_t), GFP_KERNEL);
@@ -25,7 +25,7 @@ static void *groups_seq_next(struct seq_file *m, void *v, loff_t *pos)
 	loff_t *spos = v;
 	*pos = ++*spos;
 
-	if (*pos >= nr_gsteps)
+	if (*pos >= nr_g_evaluations)
 		return NULL;
 
 	return spos;
@@ -36,31 +36,31 @@ static int groups_seq_show(struct seq_file *m, void *v)
 	uint k;
 	loff_t *spos = v;
 
-	seq_printf(m, "ID %u\n", gsteps[*spos].id);
-	seq_printf(m, "NAME %s\n", gsteps[*spos].gname);
+	seq_printf(m, "ID %u\n", g_evaluations[*spos].id);
+	seq_printf(m, "NAME %s\n", g_evaluations[*spos].gname);
 
 	seq_puts(m, "SET");
-	for (k = 0; k < gsteps[*spos].nr_groups; ++k)
-		seq_printf(m, " %u", gsteps[*spos].groups_id[k]);
+	for (k = 0; k < g_evaluations[*spos].nr_groups; ++k)
+		seq_printf(m, " %u", g_evaluations[*spos].groups_id[k]);
 	seq_puts(m, "\n");
-	seq_printf(m, "TASKS %d\n", gsteps[*spos].nr_active_tasks);
+	seq_printf(m, "TASKS %d\n", g_evaluations[*spos].nr_active_tasks);
 	seq_printf(m, "SAMPLES %u\n",
-		   atomic_read(&gsteps[*spos].profile.nr_samples));
-	seq_printf(m, "CPU_TIME %llu\n", gsteps[*spos].cpu_time);
-	seq_printf(m, "TOT_TIME %llu\n", gsteps[*spos].total_time);
-	seq_printf(m, "PROC_TIME %llu\n", gsteps[*spos].profile.time);
+		   atomic_read(&g_evaluations[*spos].profile.nr_samples));
+	seq_printf(m, "CPU_TIME %llu\n", g_evaluations[*spos].cpu_time);
+	seq_printf(m, "TOT_TIME %llu\n", g_evaluations[*spos].total_time);
+	seq_printf(m, "PROC_TIME %llu\n", g_evaluations[*spos].profile.time);
 
-	seq_printf(m, "POWER_TIME %llu\n", gsteps[*spos].profile.time);
+	seq_printf(m, "POWER_TIME %llu\n", g_evaluations[*spos].profile.time);
 	seq_printf(m, "POWER_UNITS %llu %llu %llu\n",
-		   gsteps[*spos].rapl.power_units[0],
-		   gsteps[*spos].rapl.energy_units[0],
-		   gsteps[*spos].rapl.time_units[0]);
+		   g_evaluations[*spos].rapl.power_units[0],
+		   g_evaluations[*spos].rapl.energy_units[0],
+		   g_evaluations[*spos].rapl.time_units[0]);
 	seq_printf(m, "POWERS %llu %llu %llu %llu %llu\n",
-		   gsteps[*spos].rapl.energy_package[0],
-		   gsteps[*spos].rapl.energy_pp0[0],
-		   gsteps[*spos].rapl.energy_pp1[0],
-		   gsteps[*spos].rapl.energy_rest[0],
-		   gsteps[*spos].rapl.energy_dram[0]);
+		   g_evaluations[*spos].rapl.energy_package[0],
+		   g_evaluations[*spos].rapl.energy_pp0[0],
+		   g_evaluations[*spos].rapl.energy_pp1[0],
+		   g_evaluations[*spos].rapl.energy_rest[0],
+		   g_evaluations[*spos].rapl.energy_dram[0]);
 
 	seq_puts(m, "METRICS\n");
 
@@ -70,7 +70,7 @@ static int groups_seq_show(struct seq_file *m, void *v)
 		seq_printf(                                                    \
 			m, " %u",                                              \
 			atomic_read(                                           \
-				&gsteps[*spos].profile.histotrack[idx][k]));   \
+				&g_evaluations[*spos].profile.histotrack[idx][k]));   \
 	}                                                                      \
 	seq_puts(m, "\n");
 
