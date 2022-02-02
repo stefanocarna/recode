@@ -42,14 +42,15 @@ static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 		goto no_pmi;
 	}
 
-	/* 
+	/*
 	 * The current implementation of this function does not
 	 * provide a sliding window for a discrete samples collection.
 	 * If a PMI arises, it means that there is a pmc multiplexing
-	 * request. 	 
+	 * request.
 	 */
 
-	if (pmc_multiplexing_on_pmi(cpu))
+	//if (pmc_multiplexing_on_pmi(cpu))
+	if (pmc_access_on_pmi_local(cpu))
 		pmi_function(cpu);
 
 	handled++;

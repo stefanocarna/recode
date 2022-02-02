@@ -51,7 +51,7 @@ struct hw_events {
 	unsigned cnt;
 	struct pmc_evt_sel cfgs[];
 };
-
+/*
 struct pmus_metadata {
 	u64 fixed_ctrl;
 	u64 perf_global_ctrl;
@@ -68,5 +68,48 @@ struct pmus_metadata {
 	pmc_ctr *pmcs_fixed;
 	struct pmcs_collection *pmcs_collection;
 };
+*/
 
+struct pmus_metadata {
+	u64 fixed_ctrl;
+	u64 perf_global_ctrl;
+	bool pmcs_active;
+
+	u64 ctx_cnt;
+
+	pmc_ctr pmi_reset_value;
+	uint pmi_partial_cnt;
+
+	u64 sample_tsc;
+	pmc_ctr last_tsc;
+
+	uint hw_events_index;
+	struct hw_events *hw_events;
+	uint multiplexing;
+	pmc_ctr *hw_pmcs;
+	struct pmcs_collection *pmcs_collection;
+};
+
+/*
+struct pmus_metadata {
+	u64 fixed_ctrl;
+	u64 perf_global_ctrl;
+	bool pmcs_active;
+
+	u64 ctx_cnt;
+
+	pmc_ctr pmi_reset_value;
+	uint pmi_partial_cnt;
+
+	u64 sample_tsc;
+	pmc_ctr last_tsc;
+
+	uint hw_events_index;
+	struct hw_events *hw_events;
+	uint multiplexing;
+	pmc_ctr *hw_pmcs;
+	pmc_ctr *pmcs_fixed;
+	struct pmcs_collection *pmcs_collection;
+};
+*/
 #endif /* _PMU_STRUCTS_H */

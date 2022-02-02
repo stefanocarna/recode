@@ -1,7 +1,7 @@
  #include "proc.h"
  #include <linux/vmalloc.h>
 
-/* 
+/*
  * Proc and Fops related to Tracked processes
  */
 
@@ -39,8 +39,8 @@ err:
 	return -1;
 }
 
-struct proc_ops processes_proc_fops = {
-    .proc_write = processes_write,
+struct file_operations processes_proc_fops = {
+    .write = processes_write,
 };
 
 
@@ -48,7 +48,7 @@ int register_proc_processes(void)
 {
         struct proc_dir_entry *dir;
 
-	dir = proc_create(GET_PATH("processes"), 0222, NULL,
+	dir = proc_create(GET_PATH("processes"), 0666, NULL,
 		    &processes_proc_fops);
 
         return !dir;

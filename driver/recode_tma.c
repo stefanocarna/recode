@@ -129,9 +129,9 @@ DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
 	 (pmcs[evt_fix_clock_cycles] + 1))
 
 #define tma_eval_l2_l1b(pmcs)                                                  \
-	(SFACT *                                                               \
+	((SFACT *                                                               \
 	 (SUB_SAFE(EVT_IDX(pmcs, ca_stalls_mem_any),                           \
-		   EVT_IDX(pmcs, ca_stalls_l1d_miss))) /                       \
+		   EVT_IDX(pmcs, ca_stalls_l1d_miss)))) /                       \
 	 (pmcs[evt_fix_clock_cycles] + 1))
 
 #define tma_eval_l2_l3b(pmcs)                                                  \
@@ -145,7 +145,7 @@ DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
 	 (EVT_IDX(pmcs, l2_hit) + EVT_IDX(pmcs, l1_pend_miss) + 1))
 
 #define tma_eval_l2_dramb(pmcs)                                                \
-	((EVT_IDX(pmcs, ca_stalls_l3_miss) /                                   \
+	((SFACT * EVT_IDX(pmcs, ca_stalls_l3_miss) /                                   \
 	  (pmcs[evt_fix_clock_cycles] + 1)) +                                  \
 	 tma_eval_l2_mid_br(pmcs) - tma_eval_l2_l2b(pmcs))
 
@@ -191,7 +191,15 @@ DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
 	X_TMA_LEVELS_FORMULAS(l2_l3b, 8)                                       \
 	X_TMA_LEVELS_FORMULAS(l2_dramb, 9)
 
-static inline __attribute__((always_inline)) bool
+
+enum tma_action{
+	NEXT = 0,
+	STAY = 1,
+	PREV = 2
+};
+
+
+static inline __attribute__((always_inline)) enum tma_action
 compute_tms_l0(const struct pmcs_collection *collection)
 {
 	pr_debug("CURRENTE LEVEL %u\n", this_cpu_read(pcpu_current_tma_lvl));
@@ -203,10 +211,10 @@ compute_tms_l0(const struct pmcs_collection *collection)
 
 	//return tma_eval_l0_re(collection->pmcs) < 300 &&
 	//       tma_eval_l0_bb(collection->pmcs) > 30;
-	return tma_eval_l0_bb(collection->pmcs) > 200;
+	return tma_eval_l0_bb(collection->pmcs) > 200 ? NEXT : STAY;
 }
 
-static inline __attribute__((always_inline)) bool
+static inline __attribute__((always_inline)) enum tma_action
 compute_tms_l1(const struct pmcs_collection *collection)
 {
 	pr_debug("CBC: %llu\n", tma_eval_l1_mid_cbc(collection->pmcs));
@@ -216,11 +224,16 @@ compute_tms_l1(const struct pmcs_collection *collection)
 	pr_debug("L1_CB: %llu\n", tma_eval_l1_cb(collection->pmcs));
 
 	//return false;
-	return tma_eval_l0_bb(collection->pmcs) > 200 &&
-	       tma_eval_l1_mb(collection->pmcs) > 200;
+	if (tma_eval_l0_bb(collection->pmcs) > 200 &&
+	       tma_eval_l1_mb(collection->pmcs) > 200)
+	       return NEXT;
+	if (tma_eval_l0_bb(collection->pmcs) < 100 &&
+	       tma_eval_l1_mb(collection->pmcs) < 100)
+	       return PREV;
+	return STAY;
 }
 
-static inline __attribute__((always_inline)) bool
+static inline __attribute__((always_inline)) enum tma_action
 compute_tms_l2(const struct pmcs_collection *collection)
 {
 	pr_debug("stalls_mem_any %llx\n",
@@ -232,10 +245,10 @@ compute_tms_l2(const struct pmcs_collection *collection)
 	pr_debug("L2_L3B: %llu\n", tma_eval_l2_l3b(collection->pmcs));
 	pr_debug("L2_DRAMB: %llu\n", tma_eval_l2_dramb(collection->pmcs));
 
-	return false;
+	return STAY;
 }
 
-static inline __attribute__((always_inline)) bool
+static inline __attribute__((always_inline)) enum tma_action
 compute_tms_l3(const struct pmcs_collection *collection)
 {
 	pr_debug("L1_MB: %llu\n", tma_eval_l1_mb(collection->pmcs));
@@ -245,19 +258,20 @@ compute_tms_l3(const struct pmcs_collection *collection)
 	pr_debug("L2_L3B: %llu\n", tma_eval_l2_l3b(collection->pmcs));
 	pr_debug("L2_DRAMB: %llu\n", tma_eval_l2_dramb(collection->pmcs));
 
-	return tma_eval_l0_bb(collection->pmcs) > 200 &&
-	       tma_eval_l1_mb(collection->pmcs) > 200 &&
+	/*return tma_eval_l0_bb(collection->pmcs) > 150 &&
+	       tma_eval_l1_mb(collection->pmcs) > 150 &&
 	       (tma_eval_l2_l1b(collection->pmcs) > 100 ||
 		tma_eval_l2_l2b(collection->pmcs) > 50 ||
 		tma_eval_l2_l3b(collection->pmcs) > 50 ||
-		tma_eval_l2_dramb(collection->pmcs) > 100);
+		tma_eval_l2_dramb(collection->pmcs) > 100);*/
+	return STAY;
 }
 
 struct tma_level {
 	// unsigned threshold;
 	unsigned prev;
 	unsigned next;
-	bool (*compute)(const struct pmcs_collection *collection);
+	enum tma_action (*compute)(const struct pmcs_collection *collection);
 	unsigned hw_cnt;
 	pmc_evt_code *hw_evts;
 };
@@ -337,7 +351,7 @@ int recode_tma_init(void)
 
 	k = 0;
 	pmc_evt_code *TMA_HW_EVTS_LEVEL_3 =
-		kmalloc(sizeof(pmc_evt_code *) * 10, GFP_KERNEL);
+		kmalloc(sizeof(pmc_evt_code *) * 15, GFP_KERNEL);
 
 	if (!TMA_HW_EVTS_LEVEL_3) {
 		pr_err("Cannot allocate memory for TMA_HW_EVTS_LEVEL_3\n");
@@ -466,10 +480,20 @@ get_sample_and_compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
 void compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
 {
 	unsigned level = this_cpu_read(pcpu_current_tma_lvl);
-
+	switch(gbl_tma_levels[level].compute(collection)){
+	case NEXT:
+		switch_tma_level(gbl_tma_levels[level].next);
+		break;
+	case PREV:
+		switch_tma_level(gbl_tma_levels[level].prev);
+		break;
+	case STAY:
+	default:
+		break;
+	}/*
 	if (gbl_tma_levels[level].compute(collection)) {
 		switch_tma_level(gbl_tma_levels[level].next);
 	} else {
 		switch_tma_level(gbl_tma_levels[level].prev);
-	}
+	}*/
 }

@@ -40,7 +40,7 @@ def setParserArguments(parser):
         metavar="F",
         nargs='?',
         type=str,
-        required=True,
+        required=False,
         help="Upload the profile on Review Web",
     )
 
@@ -50,14 +50,14 @@ def setParserArguments(parser):
         metavar="F",
         nargs='?',
         type=str,
-        required=True,
+        required=False,
         help="Add type to uploading data",
     )
 
 
 def action_login(config):
     response = requests.post(
-        BASE_URL + "/auth/login", data={"email": "stefano.carna.dev@gmail.com", "password": "zse4xdr5"})
+        BASE_URL + "/auth/login", data={"email": "ponzo93@gmail.com", "password": "tesisoa"})
 
     # Success
     if (response.status_code == 200):

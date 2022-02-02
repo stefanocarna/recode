@@ -7,7 +7,7 @@
 
 extern unsigned int tsc_khz;
 
-/* 
+/*
  * Proc and Fops related to CPU device
  */
 
@@ -20,7 +20,7 @@ static void *cpu_logger_seq_start(struct seq_file *m, loff_t *pos)
 
 	if (!dc)
 		goto no_data;
-	
+
 	if (!check_read_dc_sample(dc))
 		goto no_data;
 
@@ -39,7 +39,7 @@ static void *cpu_logger_seq_next(struct seq_file *m, void *v, loff_t *pos)
 {
 	unsigned *cpu = (unsigned *) PDE_DATA(file_inode(m->file));
 	struct data_collector *dc = per_cpu(pcpu_data_collector, *cpu);
-	
+
 	(*pos)++;
 
 	if (!check_read_dc_sample(dc))
@@ -55,13 +55,13 @@ static int cpu_logger_seq_show(struct seq_file *m, void *v)
 	u64 time;
 	unsigned pmc;
 	struct data_collector_sample *dc_sample;
-	
+
 	unsigned *cpu = (unsigned *) PDE_DATA(file_inode(m->file));
 	struct data_collector *dc = per_cpu(pcpu_data_collector, *cpu);
 
 	if (!v || !dc)
 		goto err;
-		
+
 	dc_sample = get_read_dc_sample(dc);
 
 	if (!dc_sample)
@@ -75,7 +75,7 @@ static int cpu_logger_seq_show(struct seq_file *m, void *v)
 	// seq_printf(m, " %u ", dc_sample->tracked);
 	// seq_printf(m, "- %u |", dc_sample->k_thread);
 	// seq_printf(m, " %llu |", dc_sample->system_tsc);
-	
+
 	// seq_printf(m, " %llu ", dc_sample->tsc_cycles);
 	// seq_printf(m, " %llu ", dc_sample->core_cycles);
 	// seq_printf(m, "- %llu |", dc_sample->core_cycles_tsc_ref);
@@ -88,7 +88,7 @@ static int cpu_logger_seq_show(struct seq_file *m, void *v)
 	seq_printf(m, "%u,", dc_sample->tracked);
 	seq_printf(m, "%u,", dc_sample->k_thread);
 	seq_printf(m, "%llu,", dc_sample->system_tsc);
-	
+
 	seq_printf(m, "%llu,", dc_sample->tsc_cycles);
 	seq_printf(m, "%llu,", dc_sample->core_cycles);
 	seq_printf(m, "%llu,", dc_sample->core_cycles_tsc_ref);
@@ -103,7 +103,7 @@ static int cpu_logger_seq_show(struct seq_file *m, void *v)
 	put_read_dc_sample(dc);
 
 	seq_printf(m, "\n");
-	
+
 	return 0;
 err:
 	return -1;
@@ -126,11 +126,11 @@ static int cpu_logger_open(struct inode *inode, struct file *filp)
 	return seq_open(filp, &cpu_logger_seq_ops);
 }
 
-struct proc_ops cpu_logger_proc_fops = {
-	.proc_open = cpu_logger_open,
-	.proc_lseek = seq_lseek,
-	.proc_read = seq_read,
-	.proc_release = seq_release,
+struct file_operations cpu_logger_proc_fops = {
+	.open = cpu_logger_open,
+	.llseek = seq_lseek,
+	.read = seq_read,
+	.release = seq_release,
 };
 
 int register_proc_cpus(void)

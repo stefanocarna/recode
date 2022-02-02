@@ -1,6 +1,6 @@
  #include "proc.h"
 
-/* 
+/*
  * Proc and Fops related to Recode state
  */
 
@@ -23,8 +23,8 @@ err:
 	return -1;
 }
 
-struct proc_ops state_proc_fops = {
-    .proc_write = state_write,
+struct file_operations state_proc_fops = {
+    .write = state_write,
 };
 
 
@@ -32,7 +32,7 @@ int register_proc_state(void)
 {
         struct proc_dir_entry *dir;
 
-	dir = proc_create(GET_PATH("state"), 0222, NULL,
+	dir = proc_create(GET_PATH("state"), 0666, NULL,
 		    &state_proc_fops);
 
         return !dir;

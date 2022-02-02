@@ -73,7 +73,7 @@ def compute(args, config):
         return cmdList
 
     cmdList.append("module -u -c -l".split())
-    cmdList.append("config -f 30".split())
+    cmdList.append("config -f 28".split())
     cmdList.append("config -s system".split())
 
     execStr = ("profiler -x " + str(args.exec)).split()

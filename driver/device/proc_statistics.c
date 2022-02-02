@@ -1,4 +1,4 @@
-/* 
+/*
  * Proc and Fops related to PMC statistics
  */
 
@@ -25,7 +25,7 @@ static ssize_t statistics_write(struct file *file,
 
 	uncopied = copy_from_user((void *)pname, (void *)buffer,
 			sizeof(char) * (n));
-	
+
 	if (uncopied) {
 		pr_info("Cannot copy al bytes - remain %u\n", uncopied);
 	}
@@ -39,11 +39,11 @@ static ssize_t statistics_write(struct file *file,
 	return count;
 }
 
-struct proc_ops statistics_proc_fops = {
-	.proc_open = statistics_open,
-	.proc_read = seq_read,
-	.proc_release = single_release,
-	.proc_write = statistics_write,
+struct file_operations statistics_proc_fops = {
+	.open = statistics_open,
+	.read = seq_read,
+	.release = single_release,
+	.write = statistics_write,
 };
 
 int register_proc_statistics(void)

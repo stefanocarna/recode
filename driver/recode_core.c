@@ -125,7 +125,7 @@ static void recode_reset_data(void)
 	// unsigned pmc;
 
 	// for_each_online_cpu (cpu) {
-			
+
 		/* TODO - Check when need to reset pcpu_pmcs_snapshot */
 		// for (pmc = 0; pmc <= gbl_nr_pmc_fixed; ++pmc)
 		// 	per_cpu(pcpu_pmcs_snapshot, cpu) = 0;
@@ -171,7 +171,6 @@ static void on_context_switch_callback(struct task_struct *prev, bool prev_on,
 		disable_pmc_on_this_cpu(false);
 		goto end;
 	}
-
 	// per_cpu(pcpu_pmus_metadata.has_ctx_switch, cpu) = true;
 
 	/* TODO - Think aobut enabling or not the sampling in CTX_SWITCH */

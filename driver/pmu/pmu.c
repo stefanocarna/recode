@@ -18,6 +18,8 @@ unsigned __read_mostly gbl_nr_pmc_general = 0;
 unsigned __read_mostly gbl_nr_hw_evts_groups = 0;
 struct hw_events *__read_mostly gbl_hw_evts_groups[MAX_GBL_HW_EVTS] = { 0 };
 
+static pmc_ctr *__hw_pmcs;
+
 void get_machine_configuration(void)
 {
 	union cpuid10_edx edx;
@@ -160,11 +162,12 @@ void debug_pmu_state(void)
 	put_cpu();
 }
 
-static void __init_pmu_on_cpu(void *pmcs_fixed)
+static void __init_pmu_on_cpu(void *hw_pmcs_p)
 {
 #ifndef CONFIG_RUNNING_ON_VM
 	u64 msr;
 	unsigned pmc;
+	pmc_ctr *hw_pmcs = (pmc_ctr *)hw_pmcs_p;
 
 	/* Refresh APIC entry */
 	if (recode_pmi_vector == NMI)
@@ -192,8 +195,8 @@ static void __init_pmu_on_cpu(void *pmcs_fixed)
 	       this_cpu_read(pcpu_pmus_metadata.fixed_ctrl));
 
 	/* Assign the memory for the fixed PMCs snapshot */
-	this_cpu_write(pcpu_pmus_metadata.pmcs_fixed,
-		       pmcs_fixed + (smp_processor_id() * gbl_nr_pmc_fixed));
+	this_cpu_write(pcpu_pmus_metadata.hw_pmcs,
+		       hw_pmcs + (smp_processor_id() * gbl_nr_pmc_fixed));
 
 	/* Assign here the memory for the per-cpu pmc-collection */
 	this_cpu_write(
@@ -211,16 +214,16 @@ int init_pmu_on_system(void)
 {
 	unsigned cpu, pmc;
 	u64 gbl_fixed_ctrl = 0;
-	pmc_ctr *pmcs_fixed;
+	//pmc_ctr *pmcs_fixed;
 	/* Compute fixed_ctrl */
 
 	pr_debug("num_possible_cpus: %u\n", num_possible_cpus());
 
 	/* TODO Free this memory */
-	pmcs_fixed = kzalloc(sizeof(pmc_ctr) * num_possible_cpus() *
-				     gbl_nr_pmc_fixed,
+	__hw_pmcs = kvcalloc(sizeof(pmc_ctr), num_possible_cpus() *
+				     (gbl_nr_pmc_fixed + gbl_nr_pmc_general),
 			     GFP_KERNEL);
-	if (!pmcs_fixed) {
+	if (!__hw_pmcs) {
 		pr_warn("Cannot allocate memory in init_pmu_on_system\n");
 		return -ENOMEM;
 	}
@@ -233,7 +236,7 @@ int init_pmu_on_system(void)
 		if (pmc == gbl_fixed_pmc_pmi) {
 			/* Set PMI */
 			gbl_fixed_ctrl |= (BIT(3) << (pmc * 4));
-			gbl_fixed_ctrl |= (BIT(0) << (pmc * 4));
+			//gbl_fixed_ctrl |= (BIT(0) << (pmc * 4));
 		}
 		if (params_cpl_usr)
 			gbl_fixed_ctrl |= (BIT(1) << (pmc * 4));
@@ -246,7 +249,7 @@ int init_pmu_on_system(void)
 	}
 
 	/* Metadata doesn't require initialization at the moment */
-	on_each_cpu(__init_pmu_on_cpu, pmcs_fixed, 1);
+	on_each_cpu(__init_pmu_on_cpu, __hw_pmcs, 1);
 
 	pr_warn("PMUs initialized on all cores\n");
 	return 0;

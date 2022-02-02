@@ -1,6 +1,7 @@
 #!/bin/python3
 import argparse
 import configparser
+from os.path import dirname, abspath
 
 import utils.plug_autotest as plug_autotest
 import utils.plug_module as plug_module
@@ -8,6 +9,7 @@ import utils.plug_config as plug_config
 import utils.plug_profiler as plug_profiler
 import utils.plug_data as plug_data
 import utils.plug_network as plug_network
+
 
 PLUGINS = [plug_module, plug_config, plug_profiler, plug_data, plug_network]
 
@@ -65,6 +67,10 @@ def compute_plugins(args, config):
 
 if __name__ == "__main__":
 
+    """ TODO Define a class Plugin """
+    plug_module.init(dirname(dirname(abspath(__file__))))
+    plug_profiler.init(dirname(abspath(__file__)))
+    
     parser = parser_init()
 
     args = parser.parse_args()
