@@ -1,7 +1,7 @@
 PWD = $(shell pwd)
 KDIR = /lib/modules/$(shell uname -r)/build
 
-MODULES = ../../driver/pmu/ ../driver/recode/
+MODULES = pmu/ recode/
 
 obj-m := $(MODULES)
 
@@ -11,17 +11,18 @@ EXTRA_CFLAGS =	-std=gnu99					\
 		-Wframe-larger-than=400				\
 		-Wno-declaration-after-statement
 
-PLUGIN :=
-CFLAGS_MODULE := 
+# PLUGIN :=
+# CFLAGS_MODULE :=
 
-ifeq ($(PLUGIN), TMA)
-	CFLAGS_MODULE += -DTMA_MODULE
-endif
-ifeq ($(PLUGIN), SECURITY)
-	CFLAGS_MODULE += -DSECURITY_MODULE
-endif
+# ifeq ($(PLUGIN), TMA)
+# 	CFLAGS_MODULE += -DTMA_MODULE
+# endif
+# ifeq ($(PLUGIN), SECURITY)
+# 	CFLAGS_MODULE += -DSECURITY_MODULE
+# endif
 
-ECHO = echo
+
+# ECHO = echo
 
 .PHONY: modules modules_install clean load unload debug security tma
 

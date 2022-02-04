@@ -1,7 +1,7 @@
 PWD = $(shell pwd)
 KDIR = /lib/modules/$(shell uname -r)/build
 
-MODULES = dependencies/ driver/
+MODULES = driver/
 
 obj-m := $(MODULES)
 
@@ -12,7 +12,8 @@ EXTRA_CFLAGS =	-std=gnu99					\
 		-Wno-declaration-after-statement
 
 PLUGIN :=
-CFLAGS_MODULE := 
+CFLAGS_MODULE :=
+POP_MODULE := 
 
 ifeq ($(PLUGIN), TMA)
 	CFLAGS_MODULE += -DTMA_MODULE
@@ -21,9 +22,13 @@ ifeq ($(PLUGIN), SECURITY)
 	CFLAGS_MODULE += -DSECURITY_MODULE
 endif
 
+
 ECHO = echo
+export POP_MODULE
+
 
 .PHONY: modules modules_install clean load unload debug security tma
+
 
 modules:
 	@$(MAKE) -w -C $(KDIR) M=$(PWD) modules

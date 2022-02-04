@@ -112,6 +112,7 @@ int attach_process(struct task_struct *tsk, char *gname)
 		goto no_register;
 
 	/* Suspend process here */
+	/* TODO Restore */
 	signal_to_group_by_id(SIGSTOP, group->id);
 
 	pr_info("Attaching process: [%u:%u]\n", tsk->tgid, tsk->pid);

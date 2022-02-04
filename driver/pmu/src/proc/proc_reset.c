@@ -9,6 +9,8 @@ static int reset_seq_show(struct seq_file *m, void *v)
 {
 	uint pmc;
 
+	seq_printf(m, "PMIs %u\n", this_cpu_read(pcpu_pmus_metadata.pmi_counter));
+	
 	for_each_fixed_pmc(pmc)
 		seq_printf(m, "FX_ctrl %u: %llx\n", pmc, READ_FIXED_PMC(pmc));
 

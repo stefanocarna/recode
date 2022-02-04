@@ -149,6 +149,9 @@ w3d_array_t partition_k_cap(const weight_t *c, array_count_t s, array_count_t k,
 	for (array_count_t i = 0; i < array_count(prev); ++i) {
 		w2d_array_t *smaller = &array_get_at(prev, i);
 
+		if (array_count(parts) > 64)
+			break;
+
 		array_count_t l = array_count(*smaller);
 		// insert `first` in each of the subpartition's subsets
 		for (array_count_t j = 0; j < l; ++j) {
@@ -187,14 +190,18 @@ size_t compute_k_partitions_min_max_cap(struct csched **av_cs_p,
 					int min_cap, int max_cap)
 {
 	int i, k;
+	bool valid;
 	int w_sum = 0;
+	int nr_cs = 1;
 	struct csched *av_cs;
-	w3d_array_t parts;
+	w3d_array_t parts, goodParts;
 
 	for (i = 0; i < size; ++i)
 		w_sum += buckets[i].k;
 
 	k = w_sum / min_cap;
+
+	pr_info("K %u Sum %u MIN %u\n", k, w_sum, min_cap);
 
 	/* No partition available */
 	if (k < 2) {
@@ -216,31 +223,58 @@ size_t compute_k_partitions_min_max_cap(struct csched **av_cs_p,
 			av_cs[0].parts[0].groups[i] =
 				(struct group_entity *)buckets[i].payload;
 
+		av_cs[0].parts[0].cpu_weight = w_sum;
+
 		av_cs_p[0] = av_cs;
 		return 1;
 	}
 
 	/* Try to find some interesting partitions */
 
+
 less_part:
+
 	/* Getting sets that may contain |partition| < cap */
 	parts = partition_k_cap(buckets, size, k, max_cap);
 
 	pr_info("K %u Sp = %u\n", k, array_count(parts));
 
+	// /* Filter unwanted partition */
+	// for (array_count_t i = 0; i < array_count(parts); ++i) {
+	// 	w2d_array_t res = array_get_at(parts, i);
+
+	// 	array_for_each(j, res) {
+	// 		if (w_array_sum(array_get_at(res, j)) < min_cap) {
+	// 			res = array_remove_at(parts, i);
+	// 			w2d_array_free(res);
+	// 			--i;
+	// 			break;
+	// 		}
+	// 	}
+	// }
+
+	array_init(goodParts);
+
 	/* Filter unwanted partition */
 	for (array_count_t i = 0; i < array_count(parts); ++i) {
 		w2d_array_t res = array_get_at(parts, i);
+		valid = true;
 
 		array_for_each(j, res) {
 			if (w_array_sum(array_get_at(res, j)) < min_cap) {
-				res = array_remove_at(parts, i);
-				w2d_array_free(res);
-				--i;
+				valid = false;
 				break;
 			}
 		}
+
+		if (valid) {
+			w2d_array_t ins = copy_2d_array(res);
+			array_push(goodParts, ins);
+		}
 	}
+
+	w3d_array_free(parts);
+	parts = goodParts;
 
 	if (array_count(parts) == 0) {
 		w3d_array_free(parts);
@@ -253,14 +287,39 @@ less_part:
 
 	/* Assemble sets into required format */
 
-	av_cs = kmalloc_array(array_count(parts), sizeof(*av_cs), GFP_KERNEL);
+#define MAX_PARTS 64
+
+	if (array_count(parts) > MAX_PARTS)
+		nr_cs = MAX_PARTS;
+	else
+		nr_cs = array_count(parts) + 1;
+
+	av_cs = kmalloc_array(nr_cs, sizeof(*av_cs), GFP_KERNEL);
 	if (!av_cs) {
 		w3d_array_free(parts);
 		return 0;
 	}
 
-	array_for_each(i, parts) {
-		w2d_array_t res = array_get_at(parts, i);
+	/* TODO Please, future me, Rewrite this code! */
+	/* Create a dummy partition with all groups */
+	av_cs[0].nr_parts = 1;
+	av_cs[0].parts =
+		kmalloc(sizeof(struct csched_part), GFP_KERNEL);
+	/* TODO Check mem allocation */
+
+	av_cs[0].parts[0].nr_groups = size;
+	av_cs[0].parts[0].groups = kmalloc_array(
+		size, sizeof(*av_cs->parts->groups), GFP_KERNEL);
+
+	for (i = 0; i < size; ++i)
+		av_cs[0].parts[0].groups[i] =
+			(struct group_entity *)buckets[i].payload;
+
+	av_cs[0].parts[0].cpu_weight = w_sum;
+
+	for (array_count_t i = 1; i < nr_cs; ++i) {
+
+		w2d_array_t res = array_get_at(parts, i - 1);
 
 		av_cs[i].parts =
 			kmalloc_array(array_count(res),
@@ -299,5 +358,5 @@ less_part:
 	w3d_array_free(parts);
 
 	*av_cs_p = av_cs;
-	return array_count(parts);
+	return nr_cs;
 }

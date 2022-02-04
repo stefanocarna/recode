@@ -10,6 +10,7 @@ void start_evaluation(void)
 	/* Start System CPU time */
 	read_cpu_stats(&group_fp->cpu_used_time, &group_fp->cpu_total_time);
 
+	pr_info(">> G %p ** %u\n", group_fp->group, group_fp->group->id);
 	pr_info(">> G %s ** START\n", group_fp->group->name);
 	/* Start Power stats */
 	RR_START();
@@ -46,6 +47,7 @@ void stop_evaluation(void)
 
 	signal_to_group(SIGSTOP, group_fp->group);
 
+	pr_info("<< G %p ** %u\n", group_fp->group, group_fp->group->id);
 	pr_info("<< G %s ** STOP\n", group_fp->group->name);
 }
 

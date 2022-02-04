@@ -2,8 +2,7 @@
 #define _RECODE_TMA_H
 
 #include <linux/atomic.h>
-
-#include "recode_collector.h"
+#include <linux/refcount.h>
 
 #define TMA_L0_FORMULAS                                                        \
 	X_TMA_LEVELS_FORMULAS(l0_bb, 0)                                        \
@@ -42,10 +41,9 @@
 #define TMA_NR_L3_FORMULAS 10
 
 struct tma_collection {
-	uint level;
-	uint cnt;
-	atomic64_t nr_samples;
-	atomic64_t metrics[10];
+	int level;
+	int cnt;
+	u64 metrics[];
 };
 
 #define TRACK_DOMAIN 100
@@ -63,15 +61,22 @@ struct tma_profile {
 	u64 time;
 };
 
-int recode_tma_init(void);
+DECLARE_PER_CPU(struct tma_collection *, pcpu_tma_collection);
 
-void recode_tma_fini(void);
+extern bool tma_enabled;
 
-struct data_collector_sample *
-get_sample_and_compute_tma(struct pmcs_collection *collection, u64 mask,
-			   u8 cpu);
+int tma_init(void);
 
-size_t get_metrics_size_by_level(uint level);
+void tma_fini(void);
+
+void update_events_index_local(struct hw_events *events);
+
+void tma_on_pmi_callback_local(void);
+
+void pmudrv_set_tma(bool tma);
+
+void compute_tma(struct pmcs_collection *pmu_collection,
+		 struct tma_collection *tma_collection);
 
 void compute_tma_metrics_smp(struct pmcs_collection *pmcs_collection,
 			     struct tma_collection *tma_collection);

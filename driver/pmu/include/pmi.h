@@ -12,14 +12,13 @@
 #define RECODE_PMI 239
 #define PMI_DELAY 0x100
 
-int pmi_nmi_setup(void);
-void pmi_nmi_cleanup(void);
-
-int pmi_irq_setup(void);
-void pmi_irq_cleanup(void);
+int pmi_setup(void);
+void pmi_cleanup(void);
 
 extern atomic_t active_pmis;
 
 bool pmc_access_on_pmi_local(void);
+
+void pmudrv_update_vector(int vector);
 
 #endif /* _PMI_H */

@@ -15,7 +15,7 @@
 
 #define ERR_TICK	0
 #define STD_TICK	100
-#define WARMUP_TICK	10
+#define WARMUP_TICK	(5 * STD_TICK)
 #define MAX_ROUND	10
 
 #define BASE_TICK_SEC	1

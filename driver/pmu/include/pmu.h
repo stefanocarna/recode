@@ -41,7 +41,7 @@ void fast_setup_general_pmc_local(struct pmc_evt_sel *pmc_cfgs, uint off,
 int setup_pmc_global(pmc_evt_code *pmc_cfgs);
 
 int pmu_global_init(void);
-void pmc_global_fini(void);
+void pmu_global_fini(void);
 
 /* Debug functions */
 void debug_pmu_state(void);

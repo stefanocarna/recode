@@ -96,8 +96,8 @@ x509.genkey
 
 # other folders
 __pycache__/
-/tools/attacks
 /tools/wrapper
+/tools/wrapper_fax
 
 # VS Code files
 *.code-workspace

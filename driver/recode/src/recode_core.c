@@ -21,6 +21,7 @@
 #include "recode_collector.h"
 
 /* TODO - create a module */
+
 #ifdef TMA_MODULE_ON
 #include "logic/recode_tma.h"
 #endif
@@ -30,26 +31,69 @@
 
 #include "hooks.h"
 
-bool dummy_on_state_change(enum recode_state state)
+bool buffering_state = true;
+bool buffering_deep_state = true;
+
+__weak void rf_on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
 {
-	return false;
+	int cnt;
+	struct data_collector *dc;
+	struct data_collector_sample *dc_sample;
+	struct tma_collection *tma_collection;
+
+	/* Nothing to do */
+	if (recode_state == OFF)
+		return;
+
+	if (buffering_state) {
+		dc = this_cpu_read(pcpu_data_collector);
+
+		if (tma_enabled) {
+			cnt = this_cpu_read(pcpu_tma_collection)->cnt;
+			dc_sample = get_write_dc_sample(dc, 0, cnt);
+
+			// pr_info("%lld\n", this_cpu_ptr(pcpu_tma_collection.metrics)[0]);
+			/* Copy raw pmc values */
+			/* TODO Fix control check */
+			memcpy(&dc_sample->tma,
+			       this_cpu_read(pcpu_tma_collection),
+			       sizeof(*tma_collection) +
+				       array_size(sizeof(u64), cnt));
+		} else {
+			cnt = pmus_metadata->pmcs_collection->cnt;
+			dc_sample = get_write_dc_sample(dc, cnt, 0);
+			/* Copy raw pmc values */
+			memcpy(&dc_sample->pmcs, pmus_metadata->pmcs_collection,
+			       sizeof(dc_sample->pmcs) +
+				       array_size(sizeof(pmc_ctr), cnt));
+		}
+
+		if (buffering_deep_state) {
+			dc_sample->id = current->pid;
+			dc_sample->tracked = query_tracked(current);
+			dc_sample->k_thread = !current->mm;
+
+			// TODO make this consistent with TMA stop
+			dc_sample->tma_level = pmus_metadata->tma_level;
+
+			dc_sample->system_tsc = pmus_metadata->last_tsc;
+			dc_sample->tsc_cycles = pmus_metadata->sample_tsc;
+			// dc_sample->core_cycles =
+			// 	pmcs_fixed(pmus_metadata->pmcs_collection->pmcs)[1];
+			// dc_sample->core_cycles_tsc_ref =
+			// 	pmcs_fixed(pmus_metadata->pmcs_collection->pmcs)[2];
+			// dc_sample->ctx_evts = pmus_metadata->ctx_evts;
+
+			get_task_comm(dc_sample->task_name, current);
+		}
+
+		put_write_dc_sample(this_cpu_read(pcpu_data_collector));
+	}
+
+	// if (query_tracked(current)) {
+	// 	atomic_inc(&tracked_pmi);
+	// }
 }
-
-static void dummy_on_ctx(struct task_struct *prev, struct task_struct *next)
-{
-	// Empty call
-}
-
-// static void dummy_on_hw_events_change(struct hw_events *events)
-// {
-// 	// Empty call
-// }
-
-struct recode_callbacks recode_callbacks = {
-	// .on_hw_events_change = dummy_on_hw_events_change,
-	.on_ctx = dummy_on_ctx,
-	.on_state_change = dummy_on_state_change,
-};
 
 enum recode_state __read_mostly recode_state = OFF;
 
@@ -59,7 +103,7 @@ int recode_data_init(void)
 {
 	unsigned cpu;
 
-	for_each_online_cpu (cpu) {
+	for_each_online_cpu(cpu) {
 		per_cpu(pcpu_data_collector, cpu) = init_collector(cpu);
 		if (!per_cpu(pcpu_data_collector, cpu))
 			goto mem_err;
@@ -79,76 +123,29 @@ void recode_data_fini(void)
 {
 	unsigned cpu;
 
-	for_each_online_cpu (cpu) {
+	for_each_online_cpu(cpu) {
 		fini_collector(cpu);
 	}
-}
-
-int recode_pmc_init(void)
-{
-	return 0;
-}
-
-void recode_pmc_fini(void)
-{
-	// pr_info("PMU uninstalled\n");
 }
 
 /* Must be implemented */
 static void recode_reset_data(void)
 {
-
 }
 
-#define ARGS_DATA(args...) void *data, args
-#define ARGS_SCHED_IN                                                          \
-	ARGS_DATA(bool preempt, struct task_struct *prev,                      \
-		  struct task_struct *next)
-#define ARGS_PROC_EXIT ARGS_DATA(struct task_struct *p)
-
-static void recode_hook_sched_in(ARGS_SCHED_IN)
+__weak int rf_hook_sched_in_custom_state(struct task_struct *prev,
+					 struct task_struct *next)
 {
-	uint cpu = get_cpu();
+	pr_warn("Invalid state on cpu %u... disabling PMCs\n",
+		smp_processor_id());
+	disable_pmcs_local(false);
+	return -1;
+}
+
+__weak void rf_after_hook_sched_in(struct task_struct *prev,
+				   struct task_struct *next)
+{
 	// struct data_logger_sample sample;
-
-	switch (recode_state) {
-	case OFF:
-		disable_pmcs_local(false);
-		goto end;
-	case IDLE:
-		enable_pmcs_local(false);
-		break;
-	case SYSTEM:
-		enable_pmcs_local(false);
-		// prev_on = true;
-		break;
-	case TUNING:
-		fallthrough;
-	case PROFILE:
-		/* Toggle PMI */
-		// if (!curr_on)
-		// 	disable_pmcs_local(false);
-		// else
-		// 	enable_pmcs_local(false);
-		break;
-	default:
-		pr_warn("Invalid state on cpu %u... disabling PMCs\n", cpu);
-		disable_pmcs_local(false);
-		goto end;
-	}
-
-	// if (unlikely(!prev)) {
-	// 	goto end;
-	// }
-
-	// TODO Remove
-	// if (query_tracked(next)) {
-	// 	pr_info("%u] vrt: %llu, TSC: %llu", prev->pid, prev->se.vruntime, rdtsc_ordered());
-	// }
-
-
-
-	recode_callbacks.on_ctx(prev, next);
 
 	// per_cpu(pcpu_pmus_metadata.has_ctx_switch, cpu) = true;
 
@@ -165,9 +162,31 @@ static void recode_hook_sched_in(ARGS_SCHED_IN)
 	// 	sample.k_thread = !prev->mm;
 	// 	write_log_sample(per_cpu(pcpu_data_logger, cpu), &sample);
 	// }
+}
 
-end:
-	put_cpu();
+static void recode_hook_sched_in(ARGS_SCHED_IN)
+{
+	switch (recode_state) {
+	case OFF:
+		disable_pmcs_local(false);
+		return;
+	case IDLE:
+	case SYSTEM:
+		enable_pmcs_local(false);
+		break;
+	case PROFILE:
+		/* Toggle PMI */
+		if (!query_tracked(next))
+			disable_pmcs_local(false);
+		else
+			enable_pmcs_local(false);
+		break;
+	default:
+		if (rf_hook_sched_in_custom_state(prev, next))
+			return;
+	}
+
+	rf_after_hook_sched_in(prev, next);
 }
 
 static void manage_pmu_state(void *dummy)
@@ -180,40 +199,70 @@ static void manage_pmu_state(void *dummy)
 	// on_context_switch_callback(NULL, false, query_tracker(current));
 }
 
-void recode_set_state(uint state)
+__weak void rf_set_state_off(int old_state)
+{
+	pmudrv_set_state(false);
+	pr_info("Recode state: OFF\n");
+
+	// TODO - Restore
+	// flush_written_samples_global();
+}
+
+__weak void rf_set_state_idle(int old_state)
+{
+	pmudrv_set_state(true);
+	pr_info("Recode ready for IDLE\n");
+}
+
+__weak void rf_set_state_profile(int old_state)
+{
+	pmudrv_set_state(true);
+	pr_info("Recode ready for PROFILE\n");
+}
+
+__weak void rf_set_state_system(int old_state)
+{
+	pmudrv_set_state(true);
+	pr_info("Recode ready for SYSTEM\n");
+}
+
+__weak int rf_set_state_custom(int old_state, int state)
+{
+	pr_warn("Recode invalid state\n");
+	return -1;
+}
+
+__weak void rf_before_set_state(int old_state, int state)
+{
+	/* Nothing to do */
+}
+
+void recode_set_state(int state)
 {
 	if (recode_state == state)
 		return;
 
-	if (recode_callbacks.on_state_change(state))
-		goto skip;
+	rf_before_set_state(recode_state, state);
 
 	switch (state) {
 	case OFF:
-		pr_info("Recode state: OFF\n");
-		recode_state = state;
-		disable_pmcs_global();
-		// TODO - Restore
-		// flush_written_samples_global();
+		recode_state = OFF;
+		rf_set_state_off(recode_state);
 		return;
 	case IDLE:
-		pr_info("Recode ready for IDLE\n");
+		rf_set_state_idle(recode_state);
 		break;
 	case PROFILE:
-		pr_info("Recode ready for PROFILE\n");
+		rf_set_state_profile(recode_state);
 		break;
 	case SYSTEM:
-		pr_info("Recode ready for SYSTEM\n");
-		break;
-	case TUNING:
-		pr_info("Recode ready for TUNING\n");
+		rf_set_state_system(recode_state);
 		break;
 	default:
-		pr_warn("Recode invalid state\n");
-		return;
+		if (rf_set_state_custom(recode_state, state))
+			return;
 	}
 
-skip:
 	recode_state = state;
 
 	recode_reset_data();

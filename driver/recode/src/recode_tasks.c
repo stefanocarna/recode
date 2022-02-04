@@ -9,6 +9,8 @@
 
 #include "hooks.h"
 
+DEFINE_PER_CPU(bool, pcpu_removing_event) = false;
+
 struct pmu_tasks_data {
 	bool profiled;
 	bool removing;
@@ -24,17 +26,26 @@ static inline struct perf_event *__get_perf_event(struct task_struct *task)
 struct pmu_tasks_data *get_task_data(struct task_struct *task)
 {
 	struct pmu_tasks_data *pmu_tasks_data;
-	struct perf_event *event = __get_perf_event(task);
+	struct perf_event *event;
+
+	/* We preempted a removing operation */
+	if (this_cpu_read(pcpu_removing_event))
+		return NULL;
+
+	event = __get_perf_event(task);
 
 	if (!event)
 		return NULL;
 
 	pmu_tasks_data = (struct pmu_tasks_data *)event->pmu_private;
 
-	if (pmu_tasks_data->removing) {
-		destroy_task_data(task);
-		return NULL;
-	}
+	// if (!pmu_tasks_data)
+	// 	return NULL;
+
+	// if (pmu_tasks_data->profiled && pmu_tasks_data->removing) {
+	// 	destroy_task_data(task);
+	// 	return NULL;
+	// }
 
 	return pmu_tasks_data;
 }
@@ -66,6 +77,7 @@ bool create_task_data(struct task_struct *task)
 	if (!pmu_tasks_data)
 		return false;
 
+	pmu_tasks_data->profiled = true;
 	event->pmu_private = pmu_tasks_data;
 
 	mutex_lock(&task->perf_event_mutex);
@@ -82,39 +94,60 @@ bool exist_or_create_task_data(struct task_struct *task)
 
 void destroy_task_data(struct task_struct *task)
 {
-	struct perf_event *event = __get_perf_event(task);
+	struct perf_event *event;
+
+	preempt_disable();
+	this_cpu_write(pcpu_removing_event, true);
+
+	event = __get_perf_event(task);
 
 	if (!event)
-		return;
+		goto end;
 
-	if (event->pmu_private)
+	if (event->pmu_private) {
 		kvfree(event->pmu_private);
+		event->pmu_private = NULL;
+	}
 
 	perf_event_release_kernel(event);
+
+	mutex_lock(&task->perf_event_mutex);
+	list_del(&event->owner_entry);
+	mutex_unlock(&task->perf_event_mutex);
+
+end:
+	this_cpu_write(pcpu_removing_event, false);
+	preempt_enable();
 }
 
 int track_thread(struct task_struct *task)
 {
+	int err = 0;
 	struct pmu_tasks_data *pmu_tasks_data;
 
-	if (!task)
-		return -EINVAL;
+	if (!task) {
+		err = -EINVAL;
+		goto end;
+	}
 
 	get_task_struct(task);
 
 	pmu_tasks_data = get_task_data(task);
 
 	/* Already tracked */
-	if (pmu_tasks_data)
-		return -EPERM;
+	if (pmu_tasks_data) {
+		err = -EPERM;
+		goto unlock;
+	}
 
-	create_task_data(task);
 
-	// pmu_tasks_data->profiled = true;
+	if (!create_task_data(task))
+		err = -ENOMEM;
 
+unlock:
 	put_task_struct(task);
-
-	return 0;
+end:
+	return err;
 }
 EXPORT_SYMBOL(track_thread);
 
@@ -129,8 +162,10 @@ bool query_tracked(struct task_struct *task)
 
 	pmu_tasks_data = get_task_data(task);
 
-	if (!pmu_tasks_data)
+	if (!pmu_tasks_data) {
+		put_task_struct(task);
 		return false;
+	}
 
 	put_task_struct(task);
 

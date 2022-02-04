@@ -1,8 +1,7 @@
-#ifndef _RECODE_SECURITY_H
-#define _RECODE_SECURITY_H
+#ifndef _SC_DETECTOR_H
+#define _SC_DETECTOR_H
 
-#include "recode_collector.h"
-#include "pmu/pmu.h"
+#include "pmu.h"
 #include "recode.h"
 
 enum tuning_type {
@@ -60,13 +59,6 @@ struct detect_stats {
 	unsigned ticks;
 };
 
-int recode_security_init(void);
-
-void recode_security_fini(void);
-
-/* on_pmi callback */
-void on_pmi(unsigned cpu, struct pmus_metadata *pmus_metadata);
-
 void on_ctx(struct task_struct *prev, bool prev_on, bool curr_on);
 
 bool on_state_change(enum recode_state state);
@@ -75,7 +67,7 @@ struct data_collector_sample *
 get_sample_and_compute_tma(struct pmcs_collection *collection, u64 mask,
 			   u8 cpu);
 
-void pmc_evaluate_activity(unsigned cpu, struct task_struct *tsk,
+void pmc_evaluate_activity(int cpu, struct task_struct *tsk,
 			   struct pmcs_collection *pmcs);
 
-#endif /* _RECODE_SECURITY_H */
+#endif /* _SC_DETECTOR_H */

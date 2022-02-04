@@ -5,6 +5,7 @@
 #include "pmu.h"
 #include "pmi.h"
 #include "hw_events.h"
+#include "logic/tma.h"
 
 static void dummy_hw_events_change_callback(struct hw_events *events)
 {
@@ -13,17 +14,6 @@ static void dummy_hw_events_change_callback(struct hw_events *events)
 
 void (*on_hw_events_setup_callback)(struct hw_events *events) =
 	dummy_hw_events_change_callback;
-
-int register_on_hw_events_setup_callback(hw_events_change_callback *callback)
-{
-	if (!callback)
-		return -EINVAL;
-
-	WRITE_ONCE(on_hw_events_setup_callback, callback);
-	pr_info("Registered HW_EVENTS_CHANGE CALLBACK: %p\n", callback);
-	return 0;
-}
-EXPORT_SYMBOL(register_on_hw_events_setup_callback);
 
 // void (*on_hw_events_setup_callback)(struct hw_events *events);
 
@@ -70,17 +60,20 @@ void fast_setup_general_pmc_local(struct pmc_evt_sel *pmc_cfgs, uint off,
 static void __update_reset_period_local(void)
 {
 	pmc_ctr reset_period;
+	uint multiplexing = this_cpu_read(pcpu_pmus_metadata.multiplexing);
 
-	reset_period = gbl_reset_period /
-		       this_cpu_read(pcpu_pmus_metadata.multiplexing);
+
+	if (multiplexing)
+		reset_period = gbl_reset_period / multiplexing;
+	else
+		reset_period = gbl_reset_period;
 
 	reset_period = PMC_TRIM(~reset_period);
 
 	this_cpu_write(pcpu_pmus_metadata.pmi_reset_value, reset_period);
 
-	pr_info("[%u] Reset period set: %llx - Multiplexing times: %u\n",
-		smp_processor_id(), reset_period,
-		this_cpu_read(pcpu_pmus_metadata.multiplexing));
+	pr_debug("[%u] (GBL :%llx) Reset period set: %llx - Multiplexing times: %u\n",
+		smp_processor_id(), gbl_reset_period, reset_period, multiplexing);
 }
 
 static void __update_reset_period_local_smp(void *unused)
@@ -160,7 +153,7 @@ void setup_hw_events_local(struct hw_events *hw_events)
 
 	save_and_disable_pmcs_local(&state);
 
-	pr_err("%s @ %u\n", __func__, smp_processor_id());
+	pr_info("** %s @ %u\n", __func__, smp_processor_id());
 
 	hw_cnt = hw_events->cnt;
 
@@ -177,8 +170,11 @@ void setup_hw_events_local(struct hw_events *hw_events)
 	this_cpu_write(pcpu_pmus_metadata.multiplexing,
 		       mpx_round ? tmp + 1 : tmp);
 
+	/* TMA */
 	/* Update pmc index array */
-	on_hw_events_setup_callback(hw_events);
+	update_events_index_local(hw_events);
+
+	// on_hw_events_setup_callback(hw_events);
 
 	__update_reset_period_local();
 

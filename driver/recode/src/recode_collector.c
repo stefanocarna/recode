@@ -26,21 +26,23 @@ void fini_collector(unsigned cpu)
 }
 
 struct data_collector_sample *get_write_dc_sample(struct data_collector *dc,
-						  unsigned hw_events_cnt)
+						  int pmc_cnt, int tma_cnt)
 {
-	unsigned wr_i, rd_i, req_size;
+	int wr_i, rd_i, req_size;
 	struct data_collector_sample *dc_sample = NULL;
 
-	if (hw_events_cnt <= 0 || !dc)
+	if (pmc_cnt < 0 || tma_cnt < 0 || !dc)
 		goto end;
 
 	wr_i = dc->wr_i;
 	rd_i = dc->rd_i;
 
 	req_size = sizeof(struct data_collector_sample) +
-		   (sizeof(pmc_ctr) * hw_events_cnt);
+		   array_size(sizeof(pmc_ctr), pmc_cnt) +
+		   array_size(sizeof(u64), tma_cnt);
 
-	pr_debug("WR SAMPLE - size %lu - req_size %u - wr_i %u, rd_i %u\n", dc->size, req_size, wr_i, rd_i);
+	pr_debug("WR SAMPLE - size %lu - req_size %u - wr_i %u, rd_i %u\n",
+		 dc->size, req_size, wr_i, rd_i);
 
 	/* There is space in the following buffer elements */
 	if (wr_i + req_size <= dc->size) {
@@ -61,8 +63,10 @@ struct data_collector_sample *get_write_dc_sample(struct data_collector *dc,
 			wr_i, rd_i, req_size);
 	}
 
-	if (dc_sample)
-		dc_sample->pmcs.cnt = hw_events_cnt;
+	if (dc_sample) {
+		dc_sample->pmcs.cnt = pmc_cnt;
+		dc_sample->tma.cnt = tma_cnt;
+	}
 
 end:
 	return dc_sample;
@@ -98,10 +102,10 @@ struct data_collector_sample *get_read_dc_sample(struct data_collector *dc)
 	dc_sample = (struct data_collector_sample *)(dc->raw_memory + rd_i);
 
 	req_size = sizeof(struct data_collector_sample) +
-		   (sizeof(pmc_ctr) * dc_sample->pmcs.cnt);
+		array_size(sizeof(pmc_ctr), dc_sample->pmcs.cnt) +
+		array_size(sizeof(u64), dc_sample->tma.cnt);
 
 	dc->rd_p = rd_i + req_size;
-
 
 	return dc_sample;
 }
@@ -118,7 +122,6 @@ bool check_read_dc_sample(struct data_collector *dc)
 {
 	pr_debug("RD CHECK wr_i %u, rd_i %u, RES: %u\n", dc->wr_i, dc->rd_i,
 		 dc && (dc->rd_i != dc->wr_i));
-	return dc &&
-	       (dc->rd_i != dc->wr_i) && /* If rd == wr, then no sample */
+	return dc && (dc->rd_i != dc->wr_i) && /* If rd == wr, then no sample */
 	       (dc->rd_i != dc->ov_i || dc->wr_i != 0);
 }

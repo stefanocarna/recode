@@ -16,8 +16,10 @@ struct data_collector_sample {
 	pmc_ctr core_cycles;
 	pmc_ctr core_cycles_tsc_ref;
 	char task_name[TASK_COMM_LEN];
+	int tma_level;
 	// unsigned ctx_evts;
 	struct pmcs_collection pmcs;
+	struct tma_collection tma;
 } __packed;
 
 struct data_collector {
@@ -40,7 +42,7 @@ struct data_collector *init_collector(uint cpu);
 void fini_collector(uint cpu);
 
 struct data_collector_sample *get_write_dc_sample(struct data_collector *dc,
-						  uint hw_events_cnt);
+						  int pmc_cnt, int tma_cnt);
 
 void put_write_dc_sample(struct data_collector *dc);
 

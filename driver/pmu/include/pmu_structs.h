@@ -47,6 +47,8 @@ struct pmus_metadata {
 	u64 perf_global_ctrl;
 	bool pmcs_active;
 
+	uint pmi_counter;
+
 	u64 ctx_cnt;
 
 	pmc_ctr pmi_reset_value;
@@ -54,6 +56,8 @@ struct pmus_metadata {
 
 	u64 sample_tsc;
 	pmc_ctr last_tsc;
+
+	int tma_level;
 
 	uint hw_events_index;
 	struct hw_events *hw_events;

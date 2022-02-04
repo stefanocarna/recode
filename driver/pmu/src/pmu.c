@@ -11,6 +11,7 @@
 #include "pmi.h"
 #include "hw_events.h"
 #include "pmu_config.h"
+#include "logic/tma.h"
 
 // TODO Refactor
 DEFINE_PER_CPU(struct pmus_metadata, pcpu_pmus_metadata) = { 0 };
@@ -52,8 +53,16 @@ void get_machine_configuration(void)
 
 void pmudrv_set_state(bool state)
 {
+	if (state == pmu_enabled)
+		return;
+
 	pr_info("State set to %s\n", state ? "ON" : "OFF");
 	pmu_enabled = state;
+
+	if (pmu_enabled)
+		enable_pmcs_global();
+	else
+		disable_pmcs_global();
 }
 EXPORT_SYMBOL(pmudrv_set_state);
 
@@ -132,6 +141,8 @@ static void __init_pmu_local(void *hw_pmcs_p)
 	uint pmc, offset;
 	pmc_ctr *hw_pmcs = (pmc_ctr *)hw_pmcs_p;
 
+	__disable_pmcs_local(NULL);
+
 	/* Refresh APIC entry */
 	if (pmi_vector == NMI)
 		apic_write(APIC_LVTPC, LVT_NMI);
@@ -145,8 +156,9 @@ static void __init_pmu_local(void *hw_pmcs_p)
 	/* Enable FREEZE_ON_PMI */
 	wrmsrl(MSR_IA32_DEBUGCTLMSR, BIT(12));
 
-	for_each_fixed_pmc (pmc) {
+	for_each_fixed_pmc(pmc) {
 		if (pmc == gbl_fixed_pmc_pmi) {
+			/* TODO Check */
 			WRITE_FIXED_PMC(pmc, PMC_TRIM(~gbl_reset_period));
 		} else {
 			WRITE_FIXED_PMC(pmc, 0ULL);
@@ -175,7 +187,7 @@ static void __init_pmu_local(void *hw_pmcs_p)
 
 int pmu_global_init(void)
 {
-	uint cpu, pmc;
+	int err, cpu, pmc;
 	u64 gbl_fixed_ctrl = 0;
 	/* Compute fixed_ctrl */
 
@@ -185,17 +197,16 @@ int pmu_global_init(void)
 	// pr_warn("*** PMUDRV set only on CPU 2 ***\n");
 	// cpumask_set_cpu(2, &pmu_enabled_cpumask);
 
-
 	pr_debug("num_possible_cpus: %u\n", num_possible_cpus());
 
 	__hw_pmcs = kvcalloc(sizeof(pmc_ctr),
 			     num_possible_cpus() * NR_SYSTEM_PMCS, GFP_KERNEL);
 	if (!__hw_pmcs) {
-		pr_warn("Cannot allocate memory in init_pmu_global\n");
-		return -ENOMEM;
+		err = -ENOMEM;
+		goto no_mem;
 	}
 
-	for_each_fixed_pmc (pmc) {
+	for_each_fixed_pmc(pmc) {
 		/**
 		 * bits: 3   2   1   0
 		 * 	PMI, 0, USR, OS
@@ -210,25 +221,33 @@ int pmu_global_init(void)
 			gbl_fixed_ctrl |= (BIT(0) << (pmc * 4));
 	}
 
-	for_each_online_cpu (cpu) {
+	for_each_online_cpu(cpu) {
 		per_cpu(pcpu_pmus_metadata.fixed_ctrl, cpu) = gbl_fixed_ctrl;
 	}
 
 	/* Metadata doesn't require initialization at the moment */
 	on_each_cpu(__init_pmu_local, __hw_pmcs, 1);
 
+	err = tma_init();
+	if (err)
+		goto no_tma;
+
 	pr_info("PMI set on fixed pmc %u\n", gbl_fixed_pmc_pmi);
 	pr_warn("PMUs initialized on all cores\n");
-
 	pr_warn("HW Events: %u\n", NR_HW_EVENTS);
 
 	return 0;
+
+no_tma:
+	kvfree(__hw_pmcs);
+no_mem:
+	return err;
 }
 
-void pmc_global_fini(void)
+void pmu_global_fini(void)
 {
-	/* TODO - To be implemented */
-	on_each_cpu(__disable_pmcs_local, NULL, 1);
+	/* This cal already disables pmu globally */
+	tma_fini();
 
 	/* This is hw_pmcs allocated in init_pmu_global */
 	kvfree(__hw_pmcs);

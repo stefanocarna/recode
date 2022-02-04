@@ -11,10 +11,18 @@
 #undef pr_fmt
 #define pr_fmt(fmt) MODNAME ": " fmt
 
+#if __has_include(<asm/fast_irq.h>)
+#include <asm/fast_irq.h>
+#define FAST_IRQ_ENABLED 1
+#endif
+
 enum pmi_vector {
-	NMI,
+	NMI = 0,
 #ifdef FAST_IRQ_ENABLED
-	IRQ
+	IRQ = 1,
+	MAX_VECTOR = 2
+#else
+	MAX_VECTOR = 1
 #endif
 };
 

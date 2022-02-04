@@ -1,9 +1,9 @@
 #include <linux/slab.h>
-#include <linux/dynamic-mitigations.h>
 #include <linux/sched/signal.h>
+#include <linux/dynamic-mitigations.h>
 
-#include "pmu/hw_events.h"
-#include "recode_security.h"
+#include "pmu_abi.h"
+#include "sc_detector.h"
 
 enum tuning_type tuning_type;
 
@@ -29,11 +29,11 @@ unsigned ts_window = 100;
 unsigned ts_alpha = 1;
 unsigned ts_beta = 1;
 
-int recode_security_init(void)
+int rf_after_module_init(void)
 {
 #define NR_SC_HW_EVTS 6
 
-	unsigned k = 0;
+	int k = 0;
 
 	pmc_evt_code *SC_HW_EVTS =
 		kmalloc(sizeof(pmc_evt_code *) * NR_SC_HW_EVTS, GFP_KERNEL);
@@ -56,22 +56,15 @@ int recode_security_init(void)
 		pr_warn("*** SKIPPING EVENTS: l2_wb l2_in_all ***");
 	}
 
-	recode_callbacks.on_pmi = on_pmi;
-	recode_callbacks.on_ctx = on_ctx;
-	recode_callbacks.on_state_change = on_state_change;
-
 	setup_hw_events_global(SC_HW_EVTS, k);
 
 	return 0;
 }
 
-void recode_security_fini(void)
-{
-}
-
 static void tuning_finish_callback(void *dummy)
 {
-	unsigned k;
+	int k;
+
 	recode_set_state(OFF);
 
 	if ((tuning_type == FR && sc_ths_fr.cnt < (2 * SKIP_SAMPLES_BEFORE)) ||
@@ -82,14 +75,16 @@ static void tuning_finish_callback(void *dummy)
 
 	if (tuning_type == FR) {
 		for (k = 0; k < sc_ths_fr.nr; ++k) {
-			sc_ths_fr.ths[k] /= (sc_ths_fr.cnt - SKIP_SAMPLES_BEFORE);
+			sc_ths_fr.ths[k] /=
+				(sc_ths_fr.cnt - SKIP_SAMPLES_BEFORE);
 			pr_warn("THS [FR] [%u]: %lld\n", k, sc_ths_fr.ths[k]);
 		}
 	}
 
 	if (tuning_type == XL) {
 		for (k = 0; k < sc_ths_xl.nr; ++k) {
-			sc_ths_xl.ths[k] /= (sc_ths_xl.cnt - SKIP_SAMPLES_BEFORE);
+			sc_ths_xl.ths[k] /=
+				(sc_ths_xl.cnt - SKIP_SAMPLES_BEFORE);
 			pr_warn("THS [XL] [%u]: %lld\n", k, sc_ths_xl.ths[k]);
 		}
 	}
@@ -107,56 +102,54 @@ skip:
 	pr_warn("Tuning finished\n");
 }
 
-bool on_state_change(enum recode_state state)
-{
-	if (state == TUNING) {
-		char *type;
-		unsigned k;
-		switch (tuning_type) {
-		case FR:
-			type = "Flush+Reload";
-			k = sc_ths_fr.nr;
-			while (k--)
-				sc_ths_fr.ths[k] = 0;
-			break;
-		case XL:
-			type = "XLate on Pagetables";
-			k = sc_ths_xl.nr;
-			while (k--)
-				sc_ths_xl.ths[k] = 0;
-			break;
-		default:
-			pr_err("No tuning type defined... Skip\n");
-			return false;
-		}
-		set_exit_callback(tuning_finish_callback);
-		pr_warn("Recode ready for TUNING (%s)\n", type);
+enum recode_state_custom { TUNING = IDLE + 1 };
 
-		return true;
-	} else {
+__weak int rf_set_state_custom(int old_state, int state)
+{
+	char *type;
+	int k;
+
+	switch (tuning_type) {
+	case FR:
+		type = "Flush+Reload";
+		k = sc_ths_fr.nr;
+		while (k--)
+			sc_ths_fr.ths[k] = 0;
+		break;
+	case XL:
+		type = "XLate on Pagetables";
+		k = sc_ths_xl.nr;
+		while (k--)
+			sc_ths_xl.ths[k] = 0;
+		break;
+	default:
+		pr_err("No tuning type defined... Skip\n");
+		return -1;
+	}
+	set_exit_callback(tuning_finish_callback);
+	pr_warn("Recode ready for TUNING (%s)\n", type);
+
+	return 0;
+}
+
+void rf_before_set_state(int old_state, state)
+{
+	if (old_state == TUNING)
 		set_exit_callback(NULL);
-	}
-
-	return false;
 }
 
-void print_spy(char *s)
+
+__weak void rf_after_hook_sched_in(struct task_struct *prev,
+				   struct task_struct *next)
+// void on_ctx(struct task_struct *prev, bool prev_on, bool curr_on)
 {
-	if (current->comm[0] == 's' && current->comm[1] == 'p' &&
-	    current->comm[2] == 'y') {
-		pr_info("[%u] SPY ON %s\n", current->pid, s);
-	}
-}
+	// int cpu = get_cpu();
 
-void on_ctx(struct task_struct *prev, bool prev_on, bool curr_on)
-{
-	unsigned cpu = get_cpu();
+	// if (!query_tracker(prev))
+	// 	goto no_log;
 
-	if (!prev_on)
-		goto no_log;
-
-	/* Disable PMUs, hence PMI */
-	disable_pmcs_local(false);
+	// /* Disable PMUs, hence PMI */
+	// disable_pmcs_local(false);
 
 	// We may skip sample at ctx
 	// if (pmc_generate_collection(cpu))
@@ -165,21 +158,20 @@ void on_ctx(struct task_struct *prev, bool prev_on, bool curr_on)
 	// 		this_cpu_read(pcpu_pmus_metadata.pmcs_collection));
 
 	// CLEAN PMCs
-	pmc_generate_collection(cpu);
+	// pmc_generate_collection(cpu);
 
-	/* Enable PMUs */
-	enable_pmcs_local(false);
+	// /* Enable PMUs */
+	// enable_pmcs_local(false);
 
-no_log:
+// no_log:
 	/* Activate on previous task */
 	if (has_pending_mitigations(prev))
 		enable_mitigations_on_task(prev);
 
 	/* Enable mitigations */
-	mitigations_switch(prev, current);
-	LLC_flush(current);
-
-	put_cpu();
+	mitigations_switch(prev, next);
+	LLC_flush(next);
+	// put_cpu();
 }
 
 static void enable_detection_statistics(struct task_struct *tsk)
@@ -384,27 +376,20 @@ end:
 	return false;
 }
 
-void pmc_evaluate_activity(unsigned cpu, struct task_struct *tsk,
+void pmc_evaluate_activity(int cpu, struct task_struct *tsk,
 			   struct pmcs_collection *pmcs)
 {
-	// get_cpu();
-
 	if (unlikely(!pmcs)) {
-		pr_warn("Called pmc_evaluate_activity without pmcs... skip");
-		goto end;
+		pr_warn("Called %s without pmcs... skip", __func__);
+		return;
 	}
 
-	if (evaluate_pmcs(tsk, pmcs)) {
+	if (evaluate_pmcs(tsk, pmcs))
 		/* Delay activation if we are inside the PMI */
 		request_mitigations_on_task(tsk, true);
-	}
-
-end:
-	return;
-	// put_cpu();
 }
 
-void on_pmi(unsigned cpu, struct pmus_metadata *pmus_metadata)
+void rf_on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
 {
 	pmc_evaluate_activity(cpu, current, pmus_metadata->pmcs_collection);
 }

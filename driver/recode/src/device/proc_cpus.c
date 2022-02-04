@@ -47,7 +47,7 @@ err:
 static int cpu_logger_seq_show(struct seq_file *m, void *v)
 {
 	u64 time;
-	uint pmc;
+	uint k;
 	struct data_collector_sample *dc_sample;
 
 	uint *cpu = (uint *)PDE_DATA(file_inode(m->file));
@@ -88,10 +88,18 @@ static int cpu_logger_seq_show(struct seq_file *m, void *v)
 
 	// seq_printf(m, "- %u |", dc_sample->ctx_evts);
 
-	seq_printf(m, "%llx", dc_sample->pmcs.mask);
+	// seq_printf(m, "%llx", dc_sample->pmcs.mask);
+	seq_printf(m, "%d", dc_sample->tma_level);
 
-	for (pmc = 0; pmc < dc_sample->pmcs.cnt; ++pmc)
-		seq_printf(m, ",%llu", dc_sample->pmcs.pmcs[pmc]);
+	/* TODO Enable the combination */
+	if (dc_sample->tma.cnt) {
+		for (k = 0; k < dc_sample->tma.cnt; ++k)
+			seq_printf(m, ",%llu", dc_sample->tma.metrics[k]);
+	} else {
+		for (k = 0; k < dc_sample->pmcs.cnt; ++k)
+			seq_printf(m, ",%llu", dc_sample->pmcs.pmcs[k]);
+	}
+
 
 	put_read_dc_sample(dc);
 

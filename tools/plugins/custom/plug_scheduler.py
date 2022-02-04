@@ -1,10 +1,14 @@
 import os
 import json
-import pandas as pd
 from .printer import *
 import numpy as np
-import matplotlib.pyplot as plt
 import string
+import random
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+import matplotlib.colors as mcolors
+from .cmd import cmd
 
 PLUGIN_NAME = "scheduler"
 HELP_DESC = "[cschedr] Access and manipulate collected data"
@@ -65,6 +69,7 @@ class CSchedProfile:
         self.retire = retire
         self.energy = energy
         self.occupancy = occupancy
+        self.name = OS_ID
 
 
 def setParserArguments(parser):
@@ -87,13 +92,31 @@ def setParserArguments(parser):
         help="Plot groups (compressed) data ",
     )
 
+    plug_parser.add_argument(
+        "-d",
+        "--dir",
+        metavar="F",
+        nargs='?',
+        type=str,
+        default=RECODE_PROC_PATH,
+        help="Set dir where to find files (default " + RECODE_PROC_PATH + ")",
+    )
 
-def autolabel(rects, ax):
+    plug_parser.add_argument(
+        "-n",
+        "--name",
+        nargs='?',
+        type=str,
+        help="Set name used to label saved data"
+    )
+
+
+def autolabel(rects, ax, prec=1):
     """Attach a text label above each bar in *rects*, displaying its height."""
     for rect in rects:
         height = rect.get_height()
         ax.annotate(
-            "{:.1f}".format(height),
+            ("{:." + str(prec) + "f}").format(height),
             xy=(rect.get_x() + rect.get_width() / 2, height),
             xytext=(0, 3),  # 3 points vertical offset
             textcoords="offset points",
@@ -105,7 +128,7 @@ def autolabel(rects, ax):
 def plot_histo(profile, ax):
     plt.figure(figsize=[10, 5])
     plt.title(
-        "Group: " + profile.name + " - Set: " + profile.getSet(groupProfiles),
+        "Group: " + profile.name + " - Set: " + str(profile.getSet(groupProfiles)),
         fontsize=15,
     )
     plt.xlim(-1, 11)
@@ -120,7 +143,7 @@ def plot_histo(profile, ax):
     width = 0.08
 
     for i, m in enumerate(profile.nMetrics):
-        plt.bar(x + (i * width), profile.metrics[m], width=width, alpha=0.7)
+        plt.bar(x[i] + (i * width), profile.metrics[m], width=width, alpha=0.7)
         plt.xticks(x, list(map(lambda x: str((x * 10)) + "%", x)))
 
     plt.legend(profile.nMetrics)
@@ -160,18 +183,18 @@ def plot_histo_compress(profile, ax):
         metrics,
         width=width,
         alpha=0.7,
-        color=[
-            "black",
-            "red",
-            "green",
-            "purple",
-            "blue",
-            "cyan",
-            "darkgray",
-            "pink",
-            "orange",
-            "gray",
-        ],
+        # color=[
+        #     "black",
+        #     "red",
+        #     "green",
+        #     "purple",
+        #     "blue",
+        #     "cyan",
+        #     "darkgray",
+        #     "pink",
+        #     "orange",
+        #     "gray",
+        # ],
     )
 
     autolabel(bars, ax)
@@ -235,25 +258,43 @@ def plot_profile_histo(groupProfiles, maxPower, compress=False):
     plt.show()
 
 
-def simple_plot(ax, x, values):
+def simple_plot(ax, x, values, max=0, reverse=False):
     width = 0.5
+
+    if (reverse):
+        colors = ["limegreen", "limegreen", "green", "green", "green", "blue", "red"]
+    else:
+        colors = ["red", "orange", "limegreen", "green"]
+
+    cmap = mcolors.LinearSegmentedColormap.from_list("", colors)
+
+
+    df = pd.DataFrame(values)
+
+    if max == 0:
+        color = cmap(df.values / df.values.max())
+    else:
+        color = cmap(df.values / max)
+    
+
     return ax.bar(
         x,
         values,
         width=width,
-        alpha=0.7,
-        color=[
-            "black",
-            "red",
-            "green",
-            "purple",
-            "blue",
-            "cyan",
-            "darkgray",
-            "pink",
-            "orange",
-            "gray",
-        ],
+        alpha=0.8,
+        color=color
+        # color=[
+        #     "black",
+        #     "red",
+        #     "green",
+        #     "purple",
+        #     "blue",
+        #     "cyan",
+        #     "darkgray",
+        #     "pink",
+        #     "orange",
+        #     "gray",
+        # ],
     )
 
 
@@ -275,7 +316,12 @@ def draw_figure(canvas, figure):
     return figure_canvas_agg
 
 
-def plot_csched_histo(cSchedProfiles, compress=False):
+def plot_csched_histo(path=None):
+    global cSchedProfiles
+    
+    sns.set_style("white")
+    # sns.color_palette("Paired")
+    sns.set_color_codes("pastel")
 
     fig, axs = plt.subplots(2, 2, squeeze=False)
 
@@ -290,65 +336,111 @@ def plot_csched_histo(cSchedProfiles, compress=False):
     retire = []
     occupancy = []
 
-    for i, e in enumerate(cSchedProfiles):
-        labels.append(string.ascii_uppercase[i])
-        score.append(e.score)
-        energy.append(e.energy)
-        retire.append(e.retire)
-        occupancy.append(e.occupancy)
+    print("csched len", len(cSchedProfiles), len(enum_chars))
 
-    axs[0][0].set_title("SCORE : ENERGY / RETIRE", fontsize=10)
-    axs[0][1].set_title("ENERGY : Joule", fontsize=10)
-    axs[1][0].set_title("RETIRE : % CPU TIME", fontsize=10)
-    axs[1][1].set_title("OCCUPANCY : % CPU TIME", fontsize=10)
+    for cs in cSchedProfiles:
+        cs.energy *= energyUnit
+        cs.retire /= 100
+        cs.occupancy /= 100
+        cs.score = cs.energy / (cs.occupancy * cs.retire)
 
+    csOS = cSchedProfiles.pop(0)
+
+    cSchedProfiles.sort(key=lambda x: x.score, reverse=True)
+
+    cSchedProfiles = cSchedProfiles[:8] + cSchedProfiles[-8:]
+    random.shuffle(cSchedProfiles)
+    cSchedProfiles.insert(0, csOS)
+
+    energy = [cs.energy for cs in cSchedProfiles]
+    retire = [cs.retire * 100 for cs in cSchedProfiles]
+    occupancy = [cs.occupancy * 100 for cs in cSchedProfiles]
+    score = [cs.score for cs in cSchedProfiles]
+    
+    # for i, e in enumerate(cSchedProfiles):
+    #     # labels.append(enum_chars[i])
+    #     energy.append(energyUnit * e.energy)
+    #     retire.append(e.retire / 100)
+    #     occupancy.append(e.occupancy / 100)
+    #     # score.append(energy[-1] / (retire[-1] * occupancy[-1]))
+    #     score.append(energy[-1] / (occupancy[-1] * retire[-1]))
+
+    # if (len(cSchedProfiles) > 16):
+    #     """ Get some max and some min """
+    #     retire = [x for _, x in sorted(zip(score, retire), reverse=True)]
+    #     occupancy = [x for _, x in sorted(zip(score, occupancy), reverse=True)]
+    #     energy = [x for _, x in sorted(zip(score, energy), reverse=True)]
+    #     sorted(score, reverse=True)
+
+    #     retire = retire[:16] + retire[-16:]
+    #     occupancy = occupancy[:16] + occupancy[-16:]
+    #     energy = energy[:16] + energy[-16:]
+    #     score = score[:16] + score[-16:]
+
+    labels = getCSNameList(cSchedProfiles)
+    print("lables", labels)
+
+    axs[0][0].set_title("SCORE : ENERGY / (OCCUPANCY * USEFUL WORK)", fontsize=11, fontweight="bold")
+    axs[0][1].set_title("ENERGY : Joule", fontsize=11, fontweight="bold")
+    axs[1][0].set_title("USEFUL WORK : % TOTAL CPU CLOCKS", fontsize=11, fontweight="bold")
+    axs[1][1].set_title("OCCUPANCY : % TOTAL CPU TIME", fontsize=11, fontweight="bold")
     for ax in axs.flat:
         ax.grid(axis="y", alpha=0.75)
         ax.set_xlim([-1, len(labels)])
 
-    bars = simple_plot(axs[0][0], labels, score)
-    axs[0][0].set_ylim([1, max(score) * 1.15])
-    autolabel(bars, axs[0][0])
+    bars = simple_plot(axs[0][0], labels, score, 0, True)
+    axs[0][0].set_ylim([0, max(score) * 1.15])
+    axs[0][0].tick_params(axis='both', labelsize=12)
+    # autolabel(bars, axs[0][0])
 
-    bars = simple_plot(axs[0][1], labels, energy)
-    axs[0][1].set_ylim([1, max(energy) * 1.15])
-    autolabel(bars, axs[0][1])
+    bars = simple_plot(axs[0][1], labels, energy, 0, True)
+    axs[0][1].set_ylim([0, max(energy) * 1.15])
+    axs[0][1].tick_params(axis='both', labelsize=12)
+    # autolabel(bars, axs[0][1])
 
-    bars = simple_plot(axs[1][0], labels, retire)
-    axs[1][0].set_ylim([1, max(retire) * 1.15])
-    autolabel(bars, axs[1][0])
+    bars = simple_plot(axs[1][0], labels, retire, 1)
+    axs[1][0].set_ylim([0, 100])
+    axs[1][0].tick_params(axis='both', labelsize=12)
+    # autolabel(bars, axs[1][0], 2)
 
-    bars = simple_plot(axs[1][1], labels, occupancy)
-    axs[1][1].set_ylim([1, max(occupancy) * 1.15])
-    autolabel(bars, axs[1][1])
+    bars = simple_plot(axs[1][1], labels, occupancy, 1)
+    axs[1][1].set_ylim([0, 100])
+    axs[1][1].tick_params(axis='both', labelsize=12)
+    # autolabel(bars, axs[1][1], 2)
 
     ax.set_xticklabels(labels)
 
-    # plt.show()
+    print("cSchedProfiles", [cs.name for cs in cSchedProfiles])
 
-    # define the window layout
-    layout = [[sg.Text("CoScheduling data")], [sg.Canvas(key="-CANVAS-")], [sg.Button("Legend", key="showLegend")]]
+    if path is not None:
+        name = readProcName(path)[0].strip()
+        plt.savefig('cosched' + name + '.pdf')
+        plot_csched_info(cSchedProfiles, groupProfiles, name)
 
-    # create the form and show it without the plot
-    window = sg.Window(
-        "CoScheduling data",
-        layout,
-        resizable=True,
-        finalize=True,
-        element_justification="center",
-        font="Helvetica 18",
-    )
+    """ RESTORE """
+    # # define the window layout
+    # layout = [[sg.Text("CoScheduling data")], [sg.Canvas(key="-CANVAS-")], [sg.Button("Legend", key="showLegend")]]
 
-    fig_canvas_agg = draw_figure(window["-CANVAS-"].TKCanvas, fig)
+    # # create the form and show it without the plot
+    # window = sg.Window(
+    #     "CoScheduling data",
+    #     layout,
+    #     resizable=True,
+    #     finalize=True,
+    #     element_justification="center",
+    #     font="Helvetica 18",
+    # )
 
-    while True:
-        event, values = window.read()
-        if event == "Exit" or event == sg.WIN_CLOSED:
-            break
-        if event == "showLegend":
-            plot_csched_info(cSchedProfiles, groupProfiles)
+    # fig_canvas_agg = draw_figure(window["-CANVAS-"].TKCanvas, fig)
+
+    # while True:
+    #     event, values = window.read()
+    #     if event == "Exit" or event == sg.WIN_CLOSED:
+    #         break
+    #     if event == "showLegend":
+    #         plot_csched_info(cSchedProfiles, groupProfiles)
         
-    window.close()
+    # window.close()
 
 
 def __tm(m):
@@ -376,30 +468,40 @@ def __tm(m):
         return m
 
 
-def readProcGroup():
+def readProcName(path):
     # return RAW
-    file = open("/proc/recode/groups", "r")
+    file = open(path + "/name", "r")
     data = file.readlines()
     file.close()
     return data
 
 
-def readProcCSched():
+def readProcGroup(path):
     # return RAW
-    file = open("/proc/recode/csched", "r")
+    file = open(path + "/groups", "r")
+    data = file.readlines()
+    file.close()
+    return data
+
+
+def readProcCSched(path):
+    # return RAW
+    file = open(path + "/csched", "r")
     data = file.readlines()
     file.close()
     return data
 
 
 groupProfiles = {}
+energyUnit = 0.5
 
 
-def parseGroupProfiles():
+def parseGroupProfiles(path):
+    global energyUnit
     onMetrics = False
     profile = None
 
-    for line in readProcGroup():
+    for line in readProcGroup(path):
         # print("Parsing: " + line)
         if "ID" in line:
             # Add the new profile
@@ -439,6 +541,7 @@ def parseGroupProfiles():
             powerUnits = []
             for u in rawPowerUnits:
                 powerUnits.append(0.5 ** (float(u)))
+            energyUnit = powerUnits[1]
             onMetrics = False
         elif "POWERS" in line:
             rawPowers = line.replace("POWERS", "").strip().split(" ")
@@ -471,18 +574,44 @@ def parseGroupProfiles():
 
 
 cSchedProfiles = []
+enum_chars = []
 
 
-def parseCSchedProfiles():
+def getCSName(csList):
+    num = len(csList) - 1
+    off = len(string.ascii_uppercase)
+    label = ""
+
+    if num == 0:
+        return OS_ID
+
+    while (num >= off):
+        tmp = num / off
+        label += string.ascii_uppercase[int(tmp)]
+        num = int(num / off) + (num % off) - 1
+
+    label += string.ascii_uppercase[num - 1]
+    return label
+
+
+def getCSNameList(csList):
+    names = []
+    for cs in csList:
+        names.append(cs.name)
+    return names
+
+
+def parseCSchedProfiles(path):
     parts = []
     onParse = False
 
-    for line in readProcCSched():
+    for line in readProcCSched(path):
         if "PARTS" in line:
             if onParse:
                 cSchedProfiles.append(
                     CSchedProfile(parts, score, retire, energy, occupancy)
                 )
+                cSchedProfiles[-1].name = getCSName(cSchedProfiles)
             parts = []
             onParse = True
         elif "SCORE" in line:
@@ -498,6 +627,20 @@ def parseCSchedProfiles():
 
     if onParse:
         cSchedProfiles.append(CSchedProfile(parts, score, retire, energy, occupancy))
+        cSchedProfiles[-1].name = getCSName(cSchedProfiles)
+
+
+    # enum_chars.append("**")
+
+    # if (len(cSchedProfiles) > len(string.ascii_uppercase)):
+    #     for c in string.ascii_uppercase:
+    #         enum_chars.append("x" + c)
+    #         enum_chars.append("y" + c)
+    #         enum_chars.append("w" + c)
+    #         enum_chars.append("z" + c)
+    #     else:
+    #         for c in string.ascii_uppercase:
+    #             enum_chars.append(c)
 
     # for p in cSchedProfiles:
     #     print(p.parts)
@@ -521,7 +664,16 @@ class CSched:
     def getPartNameIdThd(self, pId, groups, ghash):
         names = []
         for g in self.parts[pId]:
-            names.append(ghash[groups[g][0].id] + " (" + groups[g][0].name + ":" + groups[g][0].workers + ")")
+            # names.append(ghash[groups[g][0].id] + " (" + groups[g][0].name + ":" + groups[g][0].workers + ")")
+            names.append(groups[g][0].name + " (" + ghash[groups[g][0].id] + ")")
+
+        return names
+
+    def getPartCodeIdThd(self, pId, groups, ghash):
+        names = []
+        for g in self.parts[pId]:
+            # names.append(ghash[groups[g][0].id] + " (" + groups[g][0].name + ":" + groups[g][0].workers + ")")
+            names.append("(" + ghash[groups[g][0].id] + ")")
 
         return names
 
@@ -533,26 +685,43 @@ class CSched:
         return round(weight, 2)
 
 
+OS_ID = "OS"
 
-def plot_csched_info(csched, groups):
+
+def plot_csched_info(csched, groups, name):
 
     legend = {}
     data = {}
 
     ghash = {}
+
+    enum_chars = getCSNameList(cSchedProfiles)
+
     # Create fake hash
     for i, g in enumerate(groups):
-        ghash[groups[g][0].id] = "g" + str(i)
+        ghash[groups[g][0].id] = str(i)
 
     for i, e in enumerate(csched):
-        legend[string.ascii_uppercase[i]] = CSched(string.ascii_uppercase[i], e.parts)
-        
-        nr_parts = len(legend[string.ascii_uppercase[i]].parts)
-        for k in range(len(e.parts)):
-            part = legend[string.ascii_uppercase[i]]
+        legend[enum_chars[i]] = CSched(enum_chars[i], e.parts)
 
-            data[str(part.getPartNameIdThd(k, groups, ghash))] = [np.nan] * len(csched)
-            data[str(part.getPartNameIdThd(k, groups, ghash))][i] = part.getPartWeight(k, groups)
+        if legend[enum_chars[i]].id == OS_ID:
+            for k in range(len(e.parts)):
+                part = legend[enum_chars[i]]
+
+                if str(part.getPartNameIdThd(k, groups, ghash)) not in data.keys():
+                    data[str(part.getPartNameIdThd(k, groups, ghash))] = [np.nan] * len(csched)
+        
+                data[str(part.getPartNameIdThd(k, groups, ghash))][i] = part.getPartWeight(k, groups)
+        else:
+            for k in range(len(e.parts)):
+                part = legend[enum_chars[i]]
+
+                if str(part.getPartCodeIdThd(k, groups, ghash)) not in data.keys():
+                    data[str(part.getPartCodeIdThd(k, groups, ghash))] = [np.nan] * len(csched)
+        
+                data[str(part.getPartCodeIdThd(k, groups, ghash))][i] = part.getPartWeight(k, groups)
+       
+        # nr_parts = len(legend[enum_chars[i]].parts)
             # print(data[str(part.getPartNameIdThd(k, groups))])
             
             # print(part.getPartNameIdThd(k, groups), part.getPartWeight(k, groups))
@@ -563,9 +732,7 @@ def plot_csched_info(csched, groups):
     # print(legend)
 
     index = []
-    index[:0] = string.ascii_uppercase[:len(csched)]
-
-    # return 
+    index[:0] = enum_chars[:len(csched)]
 
     df = pd.DataFrame(
         data,
@@ -574,12 +741,15 @@ def plot_csched_info(csched, groups):
 
     # plot dataframe
     ax = df.plot.barh(
-        title="Available CoScheduling with partitions",
         legend=False,
-        figsize=(10, 7),
+        figsize=(18.5, 10.5),
         stacked=True,
-        width=0.6
+        width=0.9,
+        color=["b", "r", "g", "orange"]
     )
+
+    ax.tick_params(axis='both', labelsize=12)
+    ax.set_title("Available CoScheduling with partitions", fontsize="12", fontweight="bold")
 
     labels = []
     for j in df.columns:
@@ -598,36 +768,40 @@ def plot_csched_info(csched, groups):
 
             names = label.split("]:")[0].replace("[", "").replace("\'", "").replace(",", " --")
             weight = label.split("]:")[1]
-            ax.text(x + width / 2.0, (y + height / 2.0) + 0.1, names, ha="center", va="center")
-            ax.text(x + width / 2.0, (y + height / 2.0) - 0.1, weight, ha="center", va="center", fontsize=14, fontweight='bold')
+            ax.text(x + width / 2.0, (y + height / 2.0) + 0.2, names, ha="center", va="center")
+            ax.text(x + width / 2.0, (y + height / 2.0) - 0.2, weight, ha="center", va="center", fontsize=10, fontweight='bold')
 
     fig = ax.get_figure()
+    fig.set_size_inches(18.5, 10.5)
 
-    layout = [[sg.Text("CoScheduling details")], [sg.Canvas(key="-CANVAS-")], [sg.Button("Close")]]
+    plt.savefig('cosched_labels' + name + '.pdf')
 
-    # create the form and show it without the plot
-    window = sg.Window(
-        "CoScheduling info",
-        layout,
-        resizable=True,
-        finalize=True,
-        element_justification="center",
-        font="Helvetica 18",
-    )
+    """ RESTORE """
+    # layout = [[sg.Text("CoScheduling details")], [sg.Canvas(key="-CANVAS-")], [sg.Button("Close")]]
 
-    # add the plot to the window
-    fig_canvas_agg = draw_figure(window["-CANVAS-"].TKCanvas, fig)
-    event, values = window.read()
-    window.close()
+    # # create the form and show it without the plot
+    # window = sg.Window(
+    #     "CoScheduling info",
+    #     layout,
+    #     resizable=True,
+    #     finalize=True,
+    #     element_justification="center",
+    #     font="Helvetica 14",
+    # )
+
+    # # add the plot to the window
+    # fig_canvas_agg = draw_figure(window["-CANVAS-"].TKCanvas, fig)
+    # event, values = window.read()
+    # window.close()
 
 
-def action_plot(csched=False, compress=False):
-
-    parseCSchedProfiles()
-    parseGroupProfiles()
+def action_plot(path, csched=False, compress=False):
+    global cSchedProfiles
+    parseCSchedProfiles(path)
+    parseGroupProfiles(path)
 
     if csched:
-        plot_csched_histo(cSchedProfiles)
+        plot_csched_histo(path)
     else:
         power_labels = ["PKG", "PP0", "PP1", "REST", "DRAM"]
 
@@ -643,14 +817,43 @@ def action_plot(csched=False, compress=False):
                 for i, e in enumerate(p.powers):
                     print("\t* " + power_labels[i] + ": {:.6f} J".format(e))
 
-        # for p in groupProfiles:
         plot_profile_histo(groupProfiles, maxPower, compress)
-        # print(groupProfiles)
-        # if (compress):
-        #     plot_histo_compress(profile)
-        # else:
-        #     plot_histo(profile)
-        # print(profile.metrics[metric])
+        # for p in groupProfiles:
+        #     profile = groupProfiles[p]
+        #     print(groupProfiles)
+        #     if (compress):
+        #         plot_histo_compress(profile)
+        #     else:
+        #         plot_histo(profile)
+        #     print(profile.metrics[metric])
+
+
+def isInt(s):
+    try: 
+        int(s)
+        return True
+    except ValueError:
+        return False
+
+        
+def store_data(name):
+
+    path = "/home/userx/benchmark/recode_sched_logs"
+
+    max = 0
+    for d in os.listdir(path):
+        print(max, d)
+        if isInt(d) and max <= int(d):
+            max = int(d) + 1
+
+    path += "/" + str(max) + "/"
+
+    cmd(["mkdir", path])
+
+    cmd("cat /proc/recode/groups > " + path + "groups", sh=True)
+    cmd("cat /proc/recode/csched > " + path + "csched", sh=True)
+    if name:
+        cmd("echo " + name + " > " + path + "name", sh=True)
 
 
 def validate_args(args):
@@ -664,9 +867,11 @@ def compute(args, config):
     print(args)
 
     if args.plot is not None and args.plot:
-        action_plot()
+        action_plot(args.dir, False, True)
 
     if args.plot_compress is not None and args.plot_compress:
-        action_plot(True, True)
+        action_plot(args.dir, True, True)
+
+    store_data(args.name)
 
     return True

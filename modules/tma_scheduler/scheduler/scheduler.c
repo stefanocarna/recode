@@ -168,17 +168,21 @@ int schedule_action(void)
 			break;
 		fallthrough;
 	case READY:
+		pr_info("READY\n");
 		prepare_warmup();
-		return STD_TICK;
+		return WARMUP_TICK;
 	case WARMUP:
+		pr_info("WARMUP\n");
 		signal_to_all_groups(SIGSTOP);
 		prepare_evaluation();
-		return STD_TICK * WARMUP_TICK;
+		return STD_TICK;
 	case EVALUATION:
+		pr_info("EVALUATION\n");
 		if (!evaluate_next_group())
 			return prepare_consolidation();
 		return STD_TICK;
 	case CONSOLIDATION:
+		pr_info("CONSOLIDATION\n");
 		int time = consolidate_next_partition();
 
 		if (time)
@@ -235,6 +239,8 @@ void enable_scheduler(void)
 
 void disable_scheduler(void)
 {
-	hrtimer_try_to_cancel(&timer);
-	timer_init = false;
+	if (timer_init) {
+		hrtimer_try_to_cancel(&timer);
+		timer_init = false;
+	}
 }

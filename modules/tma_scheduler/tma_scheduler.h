@@ -4,9 +4,7 @@
 #include "recode.h"
 #include "plugins/recode_tma.h"
 
-int register_system_hooks(void);
 
-void unregister_system_hooks(void);
 
 void enable_scheduler(void);
 

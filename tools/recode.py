@@ -12,9 +12,12 @@ import utils.plug_network as plug_network
 import utils.plug_security as plug_security
 import utils.plug_scheduler as plug_scheduler
 import utils.plug_stress as plug_stress
+import utils.plug_vm as plug_vm
+import utils.plug_journal_base as plug_journal_base
 
 
-PLUGINS = [plug_module, plug_config, plug_profiler, plug_data, plug_network, plug_security, plug_scheduler, plug_stress]
+PLUGINS = [plug_module, plug_config, plug_profiler, plug_data, plug_network, plug_security, plug_scheduler, plug_stress, plug_vm, plug_journal_base]
+# PLUGINS = [plug_module, plug_config, plug_profiler, plug_data, plug_network, plug_security, plug_stress, plug_vm, plug_journal_base]
 
 CONFIG_FILE = 'recode.ini'
 

@@ -117,7 +117,7 @@ static int insert_process_to_group_list(pid_t pid, struct group_entity *group,
 	group->nr_processes++;
 	spin_unlock_irqrestore(&group->lock, flags);
 
-	pr_debug("[G] Add #p %u @g %u\n", pid, group->id);
+	pr_info("[G] Add #p %u @g %u (%u)\n", pid, group->id, group->nr_processes);
 	return 0;
 }
 
@@ -140,7 +140,7 @@ remove_process_from_group_list(pid_t pid, struct group_entity *group)
 	spin_unlock_irqrestore(&group->lock, flags);
 
 	if (exist) {
-		pr_debug("[G] Del #p %u @g %u\n", pid, group->id);
+		pr_info("[G] Del #p %u @g %u (%u)\n", pid, group->id, group->nr_processes);
 		pentity = cur->proc;
 		kfree(cur);
 	}
@@ -164,7 +164,8 @@ static int insert_process_to_processes_map(struct proc_entity *pentity)
 	hash_add(proc_map, &pnode->node, pnode->key);
 	spin_unlock_irqrestore(&p_lock, flags);
 
-	pr_debug("[P] Add #p %u @g %u\n", pentity->pid, pentity->group->id);
+	pr_debug("[P] Add #p %u @g %u (%u)\n", pentity->pid, pentity->group->id,
+		 pentity->group->nr_processes);
 
 	return 0;
 }
@@ -188,7 +189,7 @@ void remove_process_from_processes_map(pid_t pid, struct group_entity *group)
 
 	if (exist) {
 		kvfree(cur);
-		pr_debug("[P] Del #p %u @g %u\n", pid, group->id);
+		pr_debug("[P] Del #p %u @g %u (%u)\n", pid, group->id, group->nr_processes);
 	}
 }
 
@@ -239,6 +240,7 @@ void *unregister_process_from_group(pid_t pid, struct group_entity *group)
 {
 	void *data = NULL;
 	struct proc_entity *pentity;
+	unsigned long flags;
 
 	if (!group)
 		return NULL;
@@ -246,6 +248,18 @@ void *unregister_process_from_group(pid_t pid, struct group_entity *group)
 	remove_process_from_processes_map(pid, group);
 
 	pentity = remove_process_from_group_list(pid, group);
+
+	spin_lock_irqsave(&group->lock, flags);
+	/* Update stats */
+	if (group->profiling) {
+		pentity->utime_snap = pentity->task->utime - pentity->utime_snap;
+		pentity->stime_snap = pentity->task->stime - pentity->stime_snap;
+		group->utime += pentity->utime_snap;
+		group->stime += pentity->stime_snap;
+		if (pentity->utime_snap || pentity->stime_snap)
+			pentity->group->nr_active_tasks++;
+	}
+	spin_unlock_irqrestore(&group->lock, flags);
 
 	data = pentity->data;
 	put_task_struct(pentity->task);
@@ -315,9 +329,9 @@ void *destroy_group(uint id)
 
 	if (exist) {
 		data = cur->group->data;
+		pr_info("Destroyed group %u - %s\n", id, cur->group->name);
 		kfree(cur->group);
 		kfree(cur);
-		pr_info("Destroyed group %u\n", id);
 	}
 
 	return data;
@@ -404,9 +418,12 @@ void start_group_stats(struct group_entity *group)
 		// proc->group->nr_active_tasks = 0;
 
 		pr_debug("[%s] *-* P[%u] - uTIME: %llu, sTIME: %llu\n",
-			group->name, proc->pid, proc->utime_snap,
-			proc->stime_snap);
+			 group->name, proc->pid, proc->utime_snap,
+			 proc->stime_snap);
 	}
+
+	group->profiling = true;
+
 	spin_unlock_irqrestore(&group->lock, flags);
 }
 
@@ -426,10 +443,14 @@ void stop_group_stats(struct group_entity *group)
 		proc->group->stime += proc->stime_snap;
 		if (proc->utime_snap || proc->stime_snap)
 			proc->group->nr_active_tasks++;
-		pr_debug("[%s] uTIME: %llu, sTIME: %llu <-- P[%u] - uTIME: %llu, sTIME: %llu\n",
+		pr_debug(
+			"[%s] uTIME: %llu, sTIME: %llu <-- P[%u] - uTIME: %llu, sTIME: %llu\n",
 			group->name, proc->group->utime, proc->group->stime,
 			proc->pid, proc->utime_snap, proc->stime_snap);
 	}
+
+	group->profiling = false;
+
 	spin_unlock_irqrestore(&group->lock, flags);
 }
 
@@ -444,7 +465,7 @@ static void __signal_to_group(uint signal, struct group_entity *group)
 	spin_unlock_irqrestore(&group->lock, flags);
 }
 
-void signal_to_group(uint signal,  struct group_entity *group)
+void signal_to_group(uint signal, struct group_entity *group)
 {
 	if (!group)
 		return;

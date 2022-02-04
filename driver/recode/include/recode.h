@@ -8,6 +8,9 @@
 #include <linux/sched.h>
 #include <linux/string.h>
 
+#include "pmu_structs.h"
+
+
 #if __has_include(<asm/fast_irq.h>)
 #define FAST_IRQ_ENABLED 1
 #endif
@@ -25,11 +28,9 @@
 
 enum recode_state {
 	OFF = 0,
-	TUNING = 1,
 	PROFILE = 2,
 	SYSTEM = 3,
 	IDLE = 4, // Useless
-	KILL = 5
 };
 
 extern enum recode_state __read_mostly recode_state;
@@ -44,16 +45,22 @@ struct recode_callbacks {
 extern struct recode_callbacks __read_mostly recode_callbacks;
 
 /* Recode module */
-extern int wrecode_data_init(void);
+extern int recode_data_init(void);
 extern void recode_data_fini(void);
 
 extern int recode_pmc_init(void);
 extern void recode_pmc_fini(void);
 
-extern void recode_set_state(unsigned state);
+extern void recode_set_state(int state);
 
 extern int attach_process(struct task_struct *tsk, char *gname);
 extern void detach_process(struct task_struct *tsk);
+
+void rf_on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata);
+
+int track_thread(struct task_struct *task);
+bool query_tracked(struct task_struct *task);
+void untrack_thread(struct task_struct *task);
 
 /* Groups */
 extern uint nr_groups;
@@ -66,6 +73,7 @@ struct group_entity {
 	/* Atomicity is not required */
 	uint nr_processes;
 	struct list_head p_list;
+	bool profiling;
 	/* TODO Remove */
 	u64 utime;
 	u64 stime;
@@ -106,5 +114,17 @@ void stop_group_stats(struct group_entity *group);
 
 
 // void setup_hw_events_from_proc(pmc_evt_code *hw_events_codes, unsigned cnt);
+
+
+extern void rf_set_state_off(int old_state);
+extern void rf_set_state_idle(int old_state);
+extern void rf_set_state_profile(int old_state);
+extern void rf_set_state_system(int old_state);
+extern int rf_set_state_custom(int old_state, int state);
+extern void rf_before_set_state(int old_state, int state);
+
+
+int system_hooks_init(void);
+void system_hooks_fini(void);
 
 #endif /* _RECODE_CORE_H */

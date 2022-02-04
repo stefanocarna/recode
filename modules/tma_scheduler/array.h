@@ -12,6 +12,7 @@
 #ifndef _ARRAY_H
 #define _ARRAY_H
 
+#include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 
@@ -71,15 +72,14 @@ typedef u32 array_count_t;
 #define array_init_with_size(self, s)                                          \
 	__extension__({                                                        \
 		array_capacity(self) = s;                                      \
-		array_items(self) =                                            \
-			kmalloc_array(array_capacity(self),                    \
-				      sizeof(*array_items(self)), GFP_KERNEL); \
+		array_items(self) = kvmalloc_array(array_capacity(self),               \
+					   sizeof(*array_items(self)), GFP_KERNEL);        \
 		if (array_items(self) == NULL)                                 \
 			pr_err("array_expand items is NULL\n");                \
 		array_count(self) = 0;                                         \
 	})
 
-#define array_fini(self) __extension__({ kfree(array_items(self)); })
+#define array_fini(self) __extension__({ kvfree(array_items(self)); })
 
 #define array_push(self, elem)                                                 \
 	__extension__({                                                        \
@@ -129,12 +129,16 @@ typedef u32 array_count_t;
 	__extension__({                                                        \
 		if (unlikely(array_count(self) > INIT_SIZE_ARRAY &&            \
 			     array_count(self) * 3 <= array_capacity(self))) { \
+			array_count_t old_cap = array_capacity(self);          \
 			array_capacity(self) /= 2;                             \
-			array_items(self) =                                    \
-				krealloc(array_items(self),                    \
-					 array_capacity(self) *                \
-						 sizeof(*array_items(self)),   \
-					 GFP_KERNEL);                          \
+			void *data = kvmalloc_array(array_capacity(self),              \
+					    sizeof(*array_items(self)), GFP_KERNEL);       \
+			memcpy(array_items(self), data,                        \
+			       sizeof(*array_items(self)) * (old_cap));        \
+			array_fini(self);                                      \
+			array_items(self) = data;                              \
+			if (array_items(self) == NULL)                         \
+				pr_err("array_expand items is NULL\n");        \
 		}                                                              \
 	})
 
@@ -142,26 +146,35 @@ typedef u32 array_count_t;
 	__extension__({                                                        \
 		__typeof__(array_count(self)) tcnt = array_count(self) + n;    \
 		if (unlikely(tcnt >= array_capacity(self))) {                  \
+			array_count_t old_cap = array_capacity(self);          \
 			do {                                                   \
 				array_capacity(self) *= 2;                     \
 			} while (unlikely(tcnt >= array_capacity(self)));      \
-			array_items(self) =                                    \
-				krealloc(array_items(self),                    \
-					 array_capacity(self) *                \
-						 sizeof(*array_items(self)),   \
-					 GFP_KERNEL);                          \
+			void *data = kvmalloc_array(array_capacity(self),              \
+					    sizeof(*array_items(self)), GFP_KERNEL);       \
+			memcpy(array_items(self), data,                        \
+			       sizeof(*array_items(self)) * (old_cap));        \
+			array_fini(self);                                      \
+			array_items(self) = data;                              \
+			if (array_items(self) == NULL)                         \
+				pr_err("array_expand items is NULL\n");        \
 		}                                                              \
 	})
 
 #define array_expand(self)                                                     \
 	__extension__({                                                        \
 		if (unlikely(array_count(self) >= array_capacity(self))) {     \
-			array_capacity(self) *= 2;                             \
-			array_items(self) =                                    \
-				krealloc(array_items(self),                    \
-					 array_capacity(self) *                \
-						 sizeof(*array_items(self)),   \
-					 GFP_KERNEL);                          \
+			array_count_t old_cap = array_capacity(self);          \
+			if (unlikely(old_cap == 0))                            \
+				array_capacity(self) = 1;                      \
+			else                                                   \
+				array_capacity(self) *= 2;                     \
+			void *data = kvmalloc_array(array_capacity(self),              \
+					    sizeof(*array_items(self)), GFP_KERNEL);       \
+			memcpy(data, array_items(self),                        \
+			       sizeof(*array_items(self)) * (old_cap));        \
+			array_fini(self);                                      \
+			array_items(self) = data;                              \
 			if (array_items(self) == NULL)                         \
 				pr_err("array_expand items is NULL\n");        \
 		}                                                              \

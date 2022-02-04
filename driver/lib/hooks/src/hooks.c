@@ -44,7 +44,6 @@ static void lookup_tracepoint(struct tracepoint *tp, void *hook_ptr)
 		hook->tp = tp;
 }
 
-
 int register_hook(enum hook_type type, void *func)
 {
 	struct hook *hook;
@@ -66,21 +65,28 @@ int register_hook(enum hook_type type, void *func)
 
 	// TODO finish_task_switch -> ftrace
 
-	if (!hook->tp)
+	if (!hook->tp) {
+		pr_warn("Cannot find tracepoint for %s\n", hook->name);
 		goto no_tp;
+	}
+
+	if (tracepoint_probe_register(hook->tp, hook->func, NULL)) {
+		pr_warn("Error while registering thetracepoint %s\n",
+			hook->name);
+		goto trace_err;
+	}
 
 	spin_lock(&hooks_list_lock);
 	list_add(&hook->list, &hooks_list);
 	spin_unlock(&hooks_list_lock);
 
-	tracepoint_probe_register(hook->tp, hook->func, NULL);
-
-	pr_info("Register probe of type %s on tp %s\n", get_tp_name(type), hook->name);
+	pr_info("Register probe of type %s on tp %s\n", get_tp_name(type),
+		hook->name);
 
 	return 0;
 
+trace_err:
 no_tp:
-	pr_warn("Cannot find tracepoint for %s\n", hook->name);
 	kvfree(hook);
 	return -ENXIO;
 }

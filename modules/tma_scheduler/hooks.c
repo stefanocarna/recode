@@ -78,7 +78,7 @@ static void hook_proc_exit(ARGS_PROC_EXIT)
 
 	profile = unregister_process_from_group(p->pid, group);
 
-	/* TODO modified */
+	/* TODO modified - TMA data is shared at group level */
 	// aggregate_tma_profile(profile, (struct tma_profile *)group->data);
 	pr_debug("would aggregate p %u to g %u\n", p->pid, group->id);
 

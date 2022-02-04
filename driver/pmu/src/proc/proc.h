@@ -27,14 +27,18 @@
 extern struct proc_dir_entry *pmu_root_pd_dir;
 
 /* Proc and subProc functions  */
-void pmu_init_proc(void);
+int pmu_init_proc(void);
 void pmu_fini_proc(void);
 
 // extern int register_proc_cpus(void);
 int pmu_register_proc_frequency(void);
 // extern int register_proc_sample_info(void);
 // extern int register_proc_processes(void);
+int pmu_register_proc_tma(void);
 int pmu_register_proc_state(void);
 int pmu_register_proc_reset(void);
+int pmu_register_proc_info(void);
+int pmu_register_proc_vector(void);
+
 
 #endif /* _PROC_H */

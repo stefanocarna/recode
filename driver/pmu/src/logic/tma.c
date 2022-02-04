@@ -3,9 +3,11 @@
 #include <linux/slab.h>
 #include <linux/sched.h>
 
-#include "pmu_abi.h"
-#include "recode.h"
-#include "plugins/recode_tma.h"
+#include "pmu.h"
+#include "hw_events.h"
+#include "pmu_structs.h"
+#include "pmu_low.h"
+#include "logic/tma.h"
 
 DEFINE_PER_CPU(u8[20], pcpu_pmcs_index_array);
 DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
@@ -257,60 +259,38 @@ struct tma_level {
 #define TMA_MAX_LEVEL 4
 struct tma_level gbl_tma_levels[TMA_MAX_LEVEL];
 
-atomic_t pmis = ATOMIC_INIT(0);
+bool tma_enabled;
+EXPORT_SYMBOL(tma_enabled);
 
-void compute_tma_metrics(struct pmcs_collection *pmcs_collection,
-			 struct tma_collection *tma_collections)
-{
-}
+DEFINE_PER_CPU(struct tma_collection *, pcpu_tma_collection);
+EXPORT_PER_CPU_SYMBOL(pcpu_tma_collection);
 
-void tma_on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
+/* This function returns the TMA values for the installed level */
+void tma_on_pmi_callback_local() //, struct pmus_metadata *pmus_metadata)
 {
 	// uint k;
 	struct pmcs_collection *pmcs_collection;
-	struct data_collector_sample *dc_sample = NULL;
-
-	atomic_inc(&pmis);
+	struct tma_collection *tma_collection;
 
 	/* pmcs_collection should be correct as long as it accessed here */
-	pmcs_collection = pmus_metadata->pmcs_collection;
+	pmcs_collection = this_cpu_read(pcpu_pmus_metadata.pmcs_collection);
+	tma_collection = this_cpu_read(pcpu_tma_collection);
 
-	pr_debug("Got PMI on TMA\n");
-
+	/* TODO Remove */
 	if (unlikely(!pmcs_collection)) {
 		pr_debug("Got a NULL COLLECTION inside PMI\n");
 		return;
 	}
 
-	if (!per_cpu(pcpu_pmus_metadata.hw_events, cpu)) {
+	/* TODO Remove */
+	if (!this_cpu_read(pcpu_pmus_metadata.hw_events)) {
 		pr_debug("Got a NULL hw_events inside PMI\n");
 		return;
 	}
 
-	u64 mask = per_cpu(pcpu_pmus_metadata.hw_events, cpu)->mask;
+	tma_collection->level = this_cpu_read(pcpu_current_tma_lvl);
 
-	dc_sample = get_sample_and_compute_tma(pmcs_collection, mask, cpu);
-
-	if (unlikely(!dc_sample)) {
-		pr_debug("Got a NULL WR SAMPLE inside PMI\n");
-		return;
-	}
-
-	dc_sample->id = current->pid;
-	dc_sample->tracked = query_tracked(current);
-	dc_sample->k_thread = !current->mm;
-
-	dc_sample->system_tsc = per_cpu(pcpu_pmus_metadata.last_tsc, cpu);
-
-	dc_sample->tsc_cycles = per_cpu(pcpu_pmus_metadata.sample_tsc, cpu);
-	dc_sample->core_cycles = pmcs_fixed(pmcs_collection->pmcs)[1];
-	dc_sample->core_cycles_tsc_ref = pmcs_fixed(pmcs_collection->pmcs)[2];
-	// dc_sample->ctx_evts = per_cpu(pcpu_pmus_metadata.ctx_evts, cpu);
-
-	get_task_comm(dc_sample->task_name, current);
-
-	/* get_sample_and_compute_tma calls get_write_dc_sample */
-	put_write_dc_sample(per_cpu(pcpu_data_collector, cpu));
+	compute_tma(pmcs_collection, tma_collection);
 }
 
 /* TODO - Caching results may avoid computing indices each level switch */
@@ -331,16 +311,32 @@ void update_events_index_local(struct hw_events *events)
 	}
 }
 
-int recode_tma_init(void)
+int tma_init(void)
 {
 	uint k = 0;
+	pmc_evt_code *TMA_HW_EVTS_LEVEL_0;
+	pmc_evt_code *TMA_HW_EVTS_LEVEL_1;
+	pmc_evt_code *TMA_HW_EVTS_LEVEL_2;
+	pmc_evt_code *TMA_HW_EVTS_LEVEL_3;
 
-	pmc_evt_code *TMA_HW_EVTS_LEVEL_0 =
-		kmalloc(sizeof(pmc_evt_code *) * 4, GFP_KERNEL);
+	for_each_possible_cpu(k) {
+		per_cpu(pcpu_tma_collection, k) =
+			kmalloc(struct_size(pcpu_tma_collection, metrics,
+				TMA_NR_L3_FORMULAS),
+				// sizeof(struct tma_collection) +
+				// 	(sizeof(u64) * TMA_NR_L3_FORMULAS),
+				GFP_KERNEL);
+
+		if (!per_cpu(pcpu_tma_collection, k))
+			goto no_mem;
+	}
+
+	TMA_HW_EVTS_LEVEL_0 = kmalloc(sizeof(pmc_evt_code *) * 4, GFP_KERNEL);
 
 	if (!TMA_HW_EVTS_LEVEL_0)
-		return -ENOMEM;
+		goto no_mem;
 
+	k = 0;
 	TMA_HW_EVTS_LEVEL_0[k++].raw = HW_EVT_COD(iund_core);
 	TMA_HW_EVTS_LEVEL_0[k++].raw = HW_EVT_COD(ur_retire_slots);
 	TMA_HW_EVTS_LEVEL_0[k++].raw = HW_EVT_COD(ui_any);
@@ -352,13 +348,12 @@ int recode_tma_init(void)
 	gbl_tma_levels[0].prev = 0;
 	gbl_tma_levels[0].compute = compute_tms_l0;
 
-	k = 0;
-	pmc_evt_code *TMA_HW_EVTS_LEVEL_1 =
-		kmalloc(sizeof(pmc_evt_code *) * 9, GFP_KERNEL);
+	TMA_HW_EVTS_LEVEL_1 = kmalloc(sizeof(pmc_evt_code *) * 9, GFP_KERNEL);
 
 	if (!TMA_HW_EVTS_LEVEL_1)
-		return -ENOMEM;
+		goto no_tma1;
 
+	k = 0;
 	TMA_HW_EVTS_LEVEL_1[k++].raw = HW_EVT_COD(iund_core);
 	TMA_HW_EVTS_LEVEL_1[k++].raw = HW_EVT_COD(ur_retire_slots);
 	TMA_HW_EVTS_LEVEL_1[k++].raw = HW_EVT_COD(ui_any);
@@ -375,13 +370,12 @@ int recode_tma_init(void)
 	gbl_tma_levels[1].prev = 0;
 	gbl_tma_levels[1].compute = compute_tms_l1;
 
-	k = 0;
-	pmc_evt_code *TMA_HW_EVTS_LEVEL_2 =
-		kmalloc(sizeof(pmc_evt_code *) * 6, GFP_KERNEL);
+	TMA_HW_EVTS_LEVEL_2 = kmalloc(sizeof(pmc_evt_code *) * 6, GFP_KERNEL);
 
 	if (!TMA_HW_EVTS_LEVEL_2)
-		return -ENOMEM;
+		goto no_tma2;
 
+	k = 0;
 	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(ca_stalls_mem_any);
 	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(ca_stalls_l1d_miss);
 	TMA_HW_EVTS_LEVEL_2[k++].raw = HW_EVT_COD(ca_stalls_l2_miss);
@@ -395,13 +389,12 @@ int recode_tma_init(void)
 	gbl_tma_levels[2].prev = 1;
 	gbl_tma_levels[2].compute = compute_tms_l2;
 
-	k = 0;
-	pmc_evt_code *TMA_HW_EVTS_LEVEL_3 =
-		kmalloc(sizeof(pmc_evt_code *) * 10, GFP_KERNEL);
+	TMA_HW_EVTS_LEVEL_3 = kmalloc(sizeof(pmc_evt_code *) * 10, GFP_KERNEL);
 
 	if (!TMA_HW_EVTS_LEVEL_3)
-		return -ENOMEM;
+		goto no_tma3;
 
+	k = 0;
 	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(iund_core);
 	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ur_retire_slots);
 	TMA_HW_EVTS_LEVEL_3[k++].raw = HW_EVT_COD(ui_any);
@@ -423,7 +416,7 @@ int recode_tma_init(void)
 	gbl_tma_levels[3].prev = 3;
 	gbl_tma_levels[3].compute = compute_tms_l3;
 
-	register_on_hw_events_setup_callback(update_events_index_local);
+	// register_on_hw_events_setup_callback(update_events_index_local);
 
 	for (k = 0; k < TMA_MAX_LEVEL; ++k) {
 		pr_info("Request event creation (cnt %u)\n",
@@ -440,6 +433,27 @@ int recode_tma_init(void)
 			gbl_tma_levels[k].hw_events->cnt);
 	}
 
+	return 0;
+
+no_events:
+	for (k--; k >= 0; --k)
+		destroy_hw_events(gbl_tma_levels[k].hw_events);
+no_tma3:
+	kfree(TMA_HW_EVTS_LEVEL_2);
+no_tma2:
+	kfree(TMA_HW_EVTS_LEVEL_1);
+no_tma1:
+	kfree(TMA_HW_EVTS_LEVEL_0);
+no_mem:
+	while (k--)
+		kfree(per_cpu(pcpu_tma_collection, k - 1));
+
+	return -ENOMEM;
+}
+
+int enable_tma(void)
+{
+	int k;
 #define FORCE_LEVEL 3
 
 	pr_warn("*** HARDCODED TMA LEVEL 3 ***\n");
@@ -450,19 +464,32 @@ int recode_tma_init(void)
 
 	pr_warn("*** LEVEL SWITCH IS DISABLED ***\n");
 
-	return 0;
+	tma_enabled = true;
 
-no_events:
-	for (k--; k >= 0; --k)
-		destroy_hw_events(gbl_tma_levels[k].hw_events);
-	return -ENOMEM;
+	return 0;
 }
 
-void recode_tma_fini(void)
+void disable_tma(void)
+{
+	pmudrv_set_state(false);
+	tma_enabled = false;
+}
+
+void pmudrv_set_tma(bool tma)
+{
+	pr_info("TMA set to %s\n", tma ? "ON" : "OFF");
+	if (tma)
+		enable_tma();
+	else
+		disable_tma();
+}
+EXPORT_SYMBOL(pmudrv_set_tma);
+
+void tma_fini(void)
 {
 	uint k;
 
-	pr_info("Detected PMIs %u\n", atomic_read(&pmis));
+	disable_tma();
 
 	for (k = 0; k < TMA_MAX_LEVEL; ++k)
 		destroy_hw_events(gbl_tma_levels[k].hw_events);
@@ -477,73 +504,107 @@ static __always_inline void switch_tma_level(uint prev_level, uint next_level)
 
 	/* TODO - This must be atomic */
 	// TODO Monitor if right
+	this_cpu_write(pcpu_pmus_metadata.tma_level, prev_level);
 	this_cpu_write(pcpu_current_tma_lvl, next_level);
 	setup_hw_events_local(gbl_tma_levels[next_level].hw_events);
 }
 
+/* TODO - The mask is now replaced by the level, but this should be changed */
+// void compute_tma_histotrack_smp(struct pmcs_collection *pmcs_collection,
+// 				atomic_t (*histotrack)[TRACK_PRECISION],
+// 				atomic_t(*histotrack_comp),
+// 				atomic_t *nr_samples)
+// {
+// 	uint level = this_cpu_read(pcpu_current_tma_lvl);
+
+// #define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
+// 	atomic_inc(&histotrack[idx][track_index(                               \
+// 		tma_eval_##name(pmcs_collection->pmcs))]);                     \
+// 	atomic_add(tma_eval_##name(pmcs_collection->pmcs),                     \
+// 		   &histotrack_comp[idx]);
+
+// 	switch (level) {
+// 	case 0:
+// 		TMA_L0_FORMULAS
+// 		break;
+// 	case 1:
+// 		TMA_L1_FORMULAS
+// 		break;
+// 	case 2:
+// 		TMA_L2_FORMULAS
+// 		break;
+// 	case 3:
+// 		TMA_L3_FORMULAS
+// 		break;
+// 	default:
+// 		pr_warn("Unrecognized TMA level %u\n", level);
+// 		return;
+// 	}
+// #undef X_TMA_LEVELS_FORMULAS
+// 	atomic_inc(nr_samples);
+
+// 	evaluate_tma_level(pmcs_collection);
+// }
+
+// /* TODO - The mask is now replaced by the level, but this should be changed */
+// void compute_tma_metrics_smp(struct pmcs_collection *pmcs_collection,
+// 			     struct tma_collection *tma_collection)
+// {
+// 	uint level = this_cpu_read(pcpu_current_tma_lvl);
+
+// 	// pr_info("@%u (%u) %s lvl %u\n", smp_processor_id(), current->pid, __func__, level);
+
+// #define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
+// 	atomic64_add(tma_eval_##name(pmcs_collection->pmcs),                   \
+// 		     &tma_collection->metrics[idx]);
+
+// 	switch (level) {
+// 	case 0:
+// 		tma_collection->cnt = TMA_NR_L0_FORMULAS;
+// 		TMA_L0_FORMULAS
+// 		break;
+// 	case 1:
+// 		tma_collection->cnt = TMA_NR_L1_FORMULAS;
+// 		TMA_L1_FORMULAS
+// 		break;
+// 	case 2:
+// 		tma_collection->cnt = TMA_NR_L2_FORMULAS;
+// 		TMA_L2_FORMULAS
+// 		break;
+// 	case 3:
+// 		tma_collection->cnt = TMA_NR_L3_FORMULAS;
+// 		TMA_L3_FORMULAS
+// 		break;
+// 	default:
+// 		pr_warn("Unrecognized TMA level %u\n", level);
+// 		return;
+// 	}
+// #undef X_TMA_LEVELS_FORMULAS
+// 	atomic64_inc(&tma_collection->nr_samples);
+
+// 	evaluate_tma_level(pmcs_collection);
+// }
+
 /* TODO Restore */
-static void evaluate_tma_level(struct pmcs_collection *collection)
-{
-	// uint level = this_cpu_read(pcpu_current_tma_lvl);
-
-	// gbl_tma_levels[level].compute(collection);
-
-	// if (gbl_tma_levels[level].compute(collection))
-	// 	switch_tma_level(level, gbl_tma_levels[level].next);
-	// else
-	// 	switch_tma_level(level, gbl_tma_levels[level].prev);
-}
-
-/* TODO - The mask is now replaced by the level, but this should be changed */
-void compute_tma_histotrack_smp(struct pmcs_collection *pmcs_collection,
-				atomic_t (*histotrack)[TRACK_PRECISION],
-				atomic_t(*histotrack_comp),
-				atomic_t *nr_samples)
+static void compute_level_switch(struct pmcs_collection *collection)
 {
 	uint level = this_cpu_read(pcpu_current_tma_lvl);
 
-#define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
-	atomic_inc(&histotrack[idx][track_index(                               \
-		tma_eval_##name(pmcs_collection->pmcs))]);                     \
-	atomic_add(tma_eval_##name(pmcs_collection->pmcs),                     \
-		   &histotrack_comp[idx]);
+	gbl_tma_levels[level].compute(collection);
 
-	switch (level) {
-	case 0:
-		TMA_L0_FORMULAS
-		break;
-	case 1:
-		TMA_L1_FORMULAS
-		break;
-	case 2:
-		TMA_L2_FORMULAS
-		break;
-	case 3:
-		TMA_L3_FORMULAS
-		break;
-	default:
-		pr_warn("Unrecognized TMA level %u\n", level);
-		return;
-	}
-#undef X_TMA_LEVELS_FORMULAS
-	atomic_inc(nr_samples);
-
-	evaluate_tma_level(pmcs_collection);
+	if (gbl_tma_levels[level].compute(collection))
+		switch_tma_level(level, gbl_tma_levels[level].next);
+	else
+		switch_tma_level(level, gbl_tma_levels[level].prev);
 }
 
-/* TODO - The mask is now replaced by the level, but this should be changed */
-void compute_tma_metrics_smp(struct pmcs_collection *pmcs_collection,
-			     struct tma_collection *tma_collection)
+/* tma_collection->level must be prefilled */
+void compute_tma(struct pmcs_collection *pmu_collection,
+		 struct tma_collection *tma_collection)
 {
-	uint level = this_cpu_read(pcpu_current_tma_lvl);
-
-	// pr_info("@%u (%u) %s lvl %u\n", smp_processor_id(), current->pid, __func__, level);
-
 #define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
-	atomic64_add(tma_eval_##name(pmcs_collection->pmcs),                   \
-		     &tma_collection->metrics[idx]);
-
-	switch (level) {
+	tma_collection->metrics[idx] = tma_eval_##name(pmu_collection->pmcs);
+	switch (tma_collection->level) {
 	case 0:
 		tma_collection->cnt = TMA_NR_L0_FORMULAS;
 		TMA_L0_FORMULAS
@@ -561,58 +622,9 @@ void compute_tma_metrics_smp(struct pmcs_collection *pmcs_collection,
 		TMA_L3_FORMULAS
 		break;
 	default:
-		pr_warn("Unrecognized TMA level %u\n", level);
+		pr_warn("Unrecognized TMA level %u\n", tma_collection->level);
 		return;
 	}
 #undef X_TMA_LEVELS_FORMULAS
-	atomic64_inc(&tma_collection->nr_samples);
-
-	evaluate_tma_level(pmcs_collection);
-}
-
-/* TODO - The mask is now replaced by the level, but this should be changed */
-struct data_collector_sample *
-get_sample_and_compute_tma(struct pmcs_collection *collection, u64 mask, u8 cpu)
-{
-	struct data_collector_sample *dc_sample = NULL;
-	unsigned level = this_cpu_read(pcpu_current_tma_lvl);
-
-/* This macro is just to save code lines */
-#define generate_empty_sample(level)                                           \
-	/* Get a sample crafted ad-hoc to fit the current hw_events */         \
-	dc_sample = get_write_dc_sample(per_cpu(pcpu_data_collector, cpu),     \
-					TMA_NR_L##level##_FORMULAS);           \
-	if (unlikely(!dc_sample)) {                                            \
-		pr_debug("Got a NULL WR SAMPLE inside PMI\n");                 \
-		return NULL;                                                   \
-	}                                                                      \
-	dc_sample->pmcs.cnt = TMA_NR_L##level##_FORMULAS;                      \
-	dc_sample->pmcs.mask = level
-
-#define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
-	dc_sample->pmcs.pmcs[idx] = tma_eval_##name(collection->pmcs);
-	switch (level) {
-	case 0:
-		generate_empty_sample(0);
-		TMA_L0_FORMULAS
-		break;
-	case 1:
-		generate_empty_sample(1);
-		TMA_L1_FORMULAS
-		break;
-	case 2:
-		generate_empty_sample(2);
-		TMA_L2_FORMULAS
-		break;
-	case 3:
-		generate_empty_sample(3);
-		TMA_L3_FORMULAS
-		break;
-	default:
-		pr_warn("Unrecognized TMA level %u\n", level);
-		return NULL;
-	}
-#undef X_TMA_LEVELS_FORMULAS
-	evaluate_tma_level(collection);
-	return dc_sample;
+	compute_level_switch(pmu_collection);
 }

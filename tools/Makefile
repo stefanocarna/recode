@@ -1,13 +1,13 @@
 CC=gcc 
-CFLAGS=-I../include
 
-all: wrapper suspecter
+ACCESSORY_DIR = accessory
 
-wrapper: wrapper.c
-	$(CC) -o wrapper wrapper.c
+OBJDIR = $(ACCESSORY_DIR)/obj
+SRCDIR = $(ACCESSORY_DIR)/src
+OBJS = $(OBJDIR)/wrapper.o $(OBJDIR)/wrapper_fax.o
 
-suspecter: suspecter.c
-	$(CC) -o suspecter suspecter.c
-	
-clean:
-	rm -f wrapper suspecter
+$(info objs: $(SRCDIR))
+
+build: $(OBJS)
+$(OBJDIR)/%.o: $(SRCDIR)/%.c
+	$(CC) -c $< -o $@

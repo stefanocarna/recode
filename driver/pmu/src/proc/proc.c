@@ -2,7 +2,7 @@
 
 struct proc_dir_entry *pmu_root_pd_dir;
 
-void pmu_init_proc(void)
+int pmu_init_proc(void)
 {
 	pmu_root_pd_dir = proc_mkdir(PROC_TOP, NULL);
 
@@ -10,8 +10,13 @@ void pmu_init_proc(void)
 	pmu_register_proc_frequency();
 	// register_proc_sample_info();
 	// register_proc_processes();
+	pmu_register_proc_tma();
 	pmu_register_proc_state();
 	pmu_register_proc_reset();
+	pmu_register_proc_info();
+	pmu_register_proc_vector();
+
+	return 0;
 }
 
 void pmu_fini_proc(void)

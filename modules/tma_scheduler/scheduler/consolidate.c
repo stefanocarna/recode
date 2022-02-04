@@ -102,7 +102,6 @@ static bool stop_consolidation(void)
 void save_consolidation(void)
 {
 	int i, j;
-	u64 score;
 	struct csched_part *cs_part;
 	struct csched_evaluation *csched_ev;
 	struct csched_part_evaluation *cs_part_ev;
@@ -126,14 +125,14 @@ void save_consolidation(void)
 			cs_part_ev->group_ids[j] = cs_part->groups[j]->id;
 	}
 
-	score = this_cphase_cs.rapl.energy_package[0] * 1000;
-	score /= (this_cphase_cs.retire * 1000) + 1;
+	// score = this_cphase_cs.rapl.energy_package[0] * this_cphase_cs.retire * this_cphase_cs.occuoancy;
+	// score /= (this_cphase_cs.retire * 1000) + 1;
 
 	csched_ev->occupancy =
 		this_cphase_cs.occupancy / this_cphase_cs.nr_parts;
 	csched_ev->retire = this_cphase_cs.retire / this_cphase_cs.nr_parts;
 	csched_ev->energy = this_cphase_cs.rapl.energy_package[0];
-	csched_ev->score = score;
+	csched_ev->score = (csched_ev->energy * csched_ev->retire * csched_ev->occupancy) / 100;
 
 	cur_cs_evaluation++;
 }

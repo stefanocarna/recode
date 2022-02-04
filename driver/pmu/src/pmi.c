@@ -7,6 +7,7 @@
 #include "pmi.h"
 #include "pmu.h"
 #include "pmu_config.h"
+#include "logic/tma.h"
 
 /* TODO - place inside metadata */
 static DEFINE_PER_CPU(u32, pcpu_lvt_bkp);
@@ -39,19 +40,24 @@ EXPORT_SYMBOL(register_on_pmi_callback);
  */
 static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 {
-	u64 global;
+	u64 global, msr;
 	uint handled = 0;
-	// unsigned cpu = get_cpu();
 	uint cpu = smp_processor_id();
+
+	atomic_inc(&active_pmis);
 
 	/* Read the PMCs state */
 	rdmsrl(MSR_CORE_PERF_GLOBAL_STATUS, global);
 
 	/* Nothing to do here */
 	if (!global) {
-		pr_info("[%u] Got PMI on vector %u - FIXED: %llx\n", cpu,
-			gbl_fixed_pmc_pmi,
-			(u64)READ_FIXED_PMC(gbl_fixed_pmc_pmi));
+		// pr_info("[%u] Got PMI on vector %u - FIXED: %llx\n", cpu,
+		// 	gbl_fixed_pmc_pmi,
+		// 	(u64)READ_FIXED_PMC(gbl_fixed_pmc_pmi));
+		/* Try to fix fast NMI ~ trashing */
+		msr = READ_FIXED_PMC(gbl_fixed_pmc_pmi);
+		if (msr > 0x100 && msr < 0xFFFF)
+			goto fix;
 		goto end;
 	}
 
@@ -69,9 +75,13 @@ static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 	 * request.
 	 */
 
-	if (pmc_access_on_pmi_local())
+	if (pmc_access_on_pmi_local()) {
+		if (tma_enabled)
+			tma_on_pmi_callback_local();
 		on_pmi_callback(cpu, per_cpu_ptr(&pcpu_pmus_metadata, cpu));
+	}
 
+fix:
 	handled++;
 
 	WRITE_FIXED_PMC(gbl_fixed_pmc_pmi,
@@ -87,8 +97,8 @@ no_pmi:
 
 	wrmsrl(MSR_CORE_PERF_GLOBAL_OVF_CTRL, global);
 end:
-	// put_cpu();
 
+	atomic_dec(&active_pmis);
 	return handled;
 }
 
@@ -96,13 +106,36 @@ static void pmi_lvt_setup_local(void *dummy)
 {
 	/* Backup old LVT entry */
 	*this_cpu_ptr(&pcpu_lvt_bkp) = apic_read(APIC_LVTPC);
-	apic_write(APIC_LVTPC, LVT_NMI);
+
+	if (pmi_vector == NMI)
+		apic_write(APIC_LVTPC, LVT_NMI);
+	else
+		apic_write(APIC_LVTPC, RECODE_PMI);
 }
 
 static void pmi_lvt_cleanup_local(void *dummy)
 {
 	/* Restore old LVT entry */
 	apic_write(APIC_LVTPC, *this_cpu_ptr(&pcpu_lvt_bkp));
+}
+
+void pmudrv_update_vector(int vector)
+{
+	bool pmu_state = pmu_enabled;
+
+	if (vector == pmi_vector)
+		return;
+
+	pmu_enabled = false;
+	disable_pmcs_global();
+
+	pmi_cleanup();
+
+	pmi_vector = vector;
+
+	pmi_setup();
+
+	pmu_enabled = pmu_state;
 }
 
 /* Setup the PMI's NMI handler */
@@ -127,6 +160,7 @@ out:
 
 void pmi_nmi_cleanup(void)
 {
+	pr_info("Free NMI vector\n");
 	on_each_cpu(pmi_lvt_cleanup_local, NULL, 1);
 	unregister_nmi_handler(NMI_LOCAL, NMI_NAME);
 }
@@ -157,6 +191,8 @@ int pmi_irq_setup(void)
 	if (irq != RECODE_PMI)
 		return -1;
 
+	on_each_cpu(pmi_lvt_setup_local, NULL, 1);
+
 	return 0;
 #endif
 #endif
@@ -169,6 +205,29 @@ void pmi_irq_cleanup(void)
 }
 #else
 	int unused = 0;
+
+	pr_info("Free IRQ vector\n");
 	unused = free_fast_irq(RECODE_PMI);
 }
 #endif
+
+int pmi_setup(void)
+{
+	int err;
+
+	if (pmi_vector == NMI)
+		err = pmi_nmi_setup();
+	else
+		err = pmi_irq_setup();
+
+	return err;
+}
+
+
+void pmi_cleanup(void)
+{
+	if (pmi_vector == NMI)
+		pmi_nmi_cleanup();
+	else
+		pmi_irq_cleanup();
+}
