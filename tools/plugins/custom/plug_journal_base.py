@@ -4,8 +4,8 @@ from os.path import isfile, dirname, abspath
 import subprocess
 
 from pandas.core import base
-from .cmd import cmd, dcmd, Pipe
-from .printer import *
+from shell_cmd import *
+from color_printer import *
 import random
 import time
 import sys

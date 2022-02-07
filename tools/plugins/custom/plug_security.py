@@ -1,7 +1,7 @@
 import os
 import requests
-from .cmd import cmd
-from .printer import *
+from shell_cmd import *
+from color_printer import *
 from pathlib import Path
 
 

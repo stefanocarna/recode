@@ -3,24 +3,27 @@ import argparse
 import configparser
 from os.path import dirname, abspath
 
-import utils.plug_autotest as plug_autotest
-import utils.plug_module as plug_module
-import utils.plug_config as plug_config
-import utils.plug_profiler as plug_profiler
-import utils.plug_data as plug_data
-import utils.plug_network as plug_network
-import utils.plug_security as plug_security
-import utils.plug_scheduler as plug_scheduler
-import utils.plug_stress as plug_stress
-import utils.plug_vm as plug_vm
-import utils.plug_journal_base as plug_journal_base
+import sys
+sys.path.append(dirname(abspath(__file__)) + "/utils/base")
+sys.path.append(dirname(abspath(__file__)) + "/utils/custom")
+
+import plugins.base.plug_module as plug_module
+import plugins.base.plug_config as plug_config
+import plugins.custom.plug_profiler as plug_profiler
+import plugins.custom.plug_data as plug_data
+import plugins.custom.plug_network as plug_network
+import plugins.custom.plug_security as plug_security
+import plugins.custom.plug_scheduler as plug_scheduler
+import plugins.custom.plug_stress as plug_stress
+import plugins.custom.plug_vm as plug_vm
+import plugins.custom.plug_journal_base as plug_journal_base
+import plugins.custom.plug_autotest as plug_autotest
 
 
 PLUGINS = [plug_module, plug_config, plug_profiler, plug_data, plug_network, plug_security, plug_scheduler, plug_stress, plug_vm, plug_journal_base]
 # PLUGINS = [plug_module, plug_config, plug_profiler, plug_data, plug_network, plug_security, plug_stress, plug_vm, plug_journal_base]
 
 CONFIG_FILE = 'recode.ini'
-
 
 class RecodeConfig:
     def __init__(self, file):

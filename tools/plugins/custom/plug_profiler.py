@@ -1,17 +1,26 @@
 from os import chdir, cpu_count
 from os.path import isfile, dirname, abspath
-from .cmd import cmd
-from .printer import *
+
+import sys
+
+WD_PATH = dirname(dirname(dirname(abspath(__file__))))
+
+sys.path.append(WD_PATH + "/utils/base")
+sys.path.append(WD_PATH + "/utils/custom")
+sys.path.append(WD_PATH + "/plugins/base")
+
+from shell_cmd import *
+from color_printer import *
+from plug_config import *
+
 
 PLUGIN_NAME = "profiler"
 HELP_DESC = "Configure profiling activity"
-
-WD_PATH = dirname(dirname(dirname(abspath(__file__))))
-WRAPPER_PATH = dirname(dirname(abspath(__file__)))
+WRAPPER_PATH = WD_PATH + "/accessory/obj"
 
 
 def init(wd_path):
-    global WD_PATH 
+    global WD_PATH
     WD_PATH = wd_path
 
 
@@ -40,6 +49,14 @@ def setParserArguments(parser):
     )
 
     plug_parser.add_argument(
+        "-gn",
+        "--group-name",
+        type=str,
+        required=False,
+        help="Specify the group name seen by the profiler driver",
+    )
+
+    plug_parser.add_argument(
         "-t",
         "--timeout",
         metavar="T",
@@ -56,8 +73,24 @@ def setParserArguments(parser):
         help="Bind the program execution to a specific cpu",
     )
 
+    plug_parser.add_argument(
+        "-sw",
+        "--system-wide",
+        action="store_true",
+        required=False,
+        help="Bind the program execution to a specific cpu",
+    )
 
-def action_exec(prog, args, timeout, cpu, profile=True):
+
+def action_exec(args, profile=True):
+
+    prog = args.exec
+    cpu = args.cpu
+    timeout = args.timeout
+    system_wide = args.system_wide
+    prog_args = args.args
+    group_name = args.group_name
+
     wrapper = "wrapper"
     if not isfile(wrapper):
         # Compile Wrapper
@@ -76,20 +109,33 @@ def action_exec(prog, args, timeout, cpu, profile=True):
         else:
             _cmd = ["taskset", "-c", str(cpu)] + _cmd
 
-    _cmd = _cmd + [prog]
-
-    if args is not None:
-        _cmd = _cmd + args.split()
-
-    pr_info("Cwd: " + str(WD_PATH))
-    pr_info("Exec: " + str(_cmd) + " @ " + str(timeout))
-    out, err, ret = cmd(_cmd, timeOut=timeout)
-
-    if ret != 0:
-        pr_err("Execution failed with errcode " + str(ret) + ":")
-        pr_warn(" * " + str(err))
+    if group_name is not None:
+        _cmd = _cmd + [group_name] + [prog]
     else:
-        pr_text("OUT pipe: " + out)
+        _cmd = _cmd + [prog] + [prog]
+
+    if prog_args is not None:
+        _cmd = _cmd + prog_args.split()
+
+    if system_wide:
+        action_state("system")
+
+        pr_info("[SYSTME_WIDE] Exec: " + str(_cmd))
+        p = dcmd(_cmd)
+        p.wait()
+
+        action_state("off")
+
+    else:
+        pr_info("Cwd: " + str(WD_PATH))
+        pr_info("Exec: " + str(_cmd) + " @ " + str(timeout))
+        out, err, ret = cmd(_cmd, timeOut=timeout)
+
+        if ret != 0:
+            pr_err("Execution failed with errcode " + str(ret) + ":")
+            pr_warn(" * " + str(err))
+        else:
+            pr_text("OUT pipe: " + out)
 
 
 def validate_args(args):
@@ -103,6 +149,6 @@ def compute(args, config):
     chdir(WD_PATH)
 
     if args.exec:
-        action_exec(args.exec, args.args, args.timeout, args.cpu)
+        action_exec(args)
 
     return True

@@ -1,4 +1,4 @@
-from .printer import *
+from color_printer import *
 
 
 PLUGIN_NAME = "config"
@@ -63,7 +63,7 @@ def setParserArguments(parser):
     )
 
 
-def action_state(action, type):
+def action_state(action):
     # path = RECODE_PROC_PATH + "/security/tuning"
 
     # if type == "FR":
@@ -179,7 +179,8 @@ def compute(args, config):
         action_frequency(args.frequency)
 
     if args.state:
-        action_state(args.state, args.tuning_type)
+        action_state(args.state)
+        # action_state(args.state, args.tuning_type)
 
     if args.info:
         action_info()

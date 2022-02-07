@@ -1,8 +1,8 @@
 from os import chdir, cpu_count, strerror, system
 from os.path import isfile, dirname, abspath
 import subprocess
-from .cmd import cmd, dcmd
-from .printer import *
+from shell_cmd import *
+from color_printer import *
 import random
 import time
 

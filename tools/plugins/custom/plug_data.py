@@ -1,9 +1,9 @@
 import os
 import json
 import pandas as pd
-from .printer import *
-from .proc_reader import ProcCpuReader
-from .proc_reader import ProcCpuReaderTMA
+from color_printer import *
+from proc_reader import ProcCpuReader
+from proc_reader import ProcCpuReaderTMA
 
 PLUGIN_NAME = "data"
 HELP_DESC = "Access and manipulate collected data"

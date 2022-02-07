@@ -1,6 +1,4 @@
 import os
-from .printer import *
-
 
 PLUGIN_NAME = "autotest"
 HELP_DESC = "Configure Recode to execute test with minimum effort"

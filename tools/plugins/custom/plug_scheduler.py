@@ -1,6 +1,6 @@
 import os
 import json
-from .printer import *
+from color_printer import *
 import numpy as np
 import string
 import random
@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 import matplotlib.colors as mcolors
-from .cmd import cmd
+from shell_cmd import * 
 
 PLUGIN_NAME = "scheduler"
 HELP_DESC = "[cschedr] Access and manipulate collected data"

@@ -1,7 +1,7 @@
 from os import chdir, cpu_count, strerror, system
 from os.path import isfile, dirname, abspath
 import subprocess
-from .cmd import cmd, dcmd
+from .cmd from shell_cmd import *, dcmd
 from .printer import *
 import random
 
