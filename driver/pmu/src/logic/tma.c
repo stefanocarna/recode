@@ -10,7 +10,6 @@
 #include "logic/tma.h"
 
 DEFINE_PER_CPU(u8[20], pcpu_pmcs_index_array);
-DEFINE_PER_CPU(u8, pcpu_current_tma_lvl) = 0;
 
 /* TMA masks */
 
@@ -288,7 +287,7 @@ void tma_on_pmi_callback_local() //, struct pmus_metadata *pmus_metadata)
 		return;
 	}
 
-	tma_collection->level = this_cpu_read(pcpu_current_tma_lvl);
+	tma_collection->level = this_cpu_read(pcpu_pmus_metadata.tma_level);
 
 	compute_tma(pmcs_collection, tma_collection);
 }
@@ -458,7 +457,7 @@ int enable_tma(void)
 
 	pr_warn("*** HARDCODED TMA LEVEL 3 ***\n");
 	for_each_possible_cpu(k)
-		per_cpu(pcpu_current_tma_lvl, k) = FORCE_LEVEL;
+		per_cpu(pcpu_pmus_metadata.tma_level, k) = FORCE_LEVEL;
 
 	setup_hw_events_global(gbl_tma_levels[FORCE_LEVEL].hw_events);
 
@@ -504,91 +503,15 @@ static __always_inline void switch_tma_level(uint prev_level, uint next_level)
 
 	/* TODO - This must be atomic */
 	// TODO Monitor if right
-	this_cpu_write(pcpu_pmus_metadata.tma_level, prev_level);
-	this_cpu_write(pcpu_current_tma_lvl, next_level);
+	// this_cpu_write(pcpu_pmus_metadata.tma_level, prev_level);
+	this_cpu_write(pcpu_pmus_metadata.tma_level, next_level);
 	setup_hw_events_local(gbl_tma_levels[next_level].hw_events);
 }
-
-/* TODO - The mask is now replaced by the level, but this should be changed */
-// void compute_tma_histotrack_smp(struct pmcs_collection *pmcs_collection,
-// 				atomic_t (*histotrack)[TRACK_PRECISION],
-// 				atomic_t(*histotrack_comp),
-// 				atomic_t *nr_samples)
-// {
-// 	uint level = this_cpu_read(pcpu_current_tma_lvl);
-
-// #define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
-// 	atomic_inc(&histotrack[idx][track_index(                               \
-// 		tma_eval_##name(pmcs_collection->pmcs))]);                     \
-// 	atomic_add(tma_eval_##name(pmcs_collection->pmcs),                     \
-// 		   &histotrack_comp[idx]);
-
-// 	switch (level) {
-// 	case 0:
-// 		TMA_L0_FORMULAS
-// 		break;
-// 	case 1:
-// 		TMA_L1_FORMULAS
-// 		break;
-// 	case 2:
-// 		TMA_L2_FORMULAS
-// 		break;
-// 	case 3:
-// 		TMA_L3_FORMULAS
-// 		break;
-// 	default:
-// 		pr_warn("Unrecognized TMA level %u\n", level);
-// 		return;
-// 	}
-// #undef X_TMA_LEVELS_FORMULAS
-// 	atomic_inc(nr_samples);
-
-// 	evaluate_tma_level(pmcs_collection);
-// }
-
-// /* TODO - The mask is now replaced by the level, but this should be changed */
-// void compute_tma_metrics_smp(struct pmcs_collection *pmcs_collection,
-// 			     struct tma_collection *tma_collection)
-// {
-// 	uint level = this_cpu_read(pcpu_current_tma_lvl);
-
-// 	// pr_info("@%u (%u) %s lvl %u\n", smp_processor_id(), current->pid, __func__, level);
-
-// #define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
-// 	atomic64_add(tma_eval_##name(pmcs_collection->pmcs),                   \
-// 		     &tma_collection->metrics[idx]);
-
-// 	switch (level) {
-// 	case 0:
-// 		tma_collection->cnt = TMA_NR_L0_FORMULAS;
-// 		TMA_L0_FORMULAS
-// 		break;
-// 	case 1:
-// 		tma_collection->cnt = TMA_NR_L1_FORMULAS;
-// 		TMA_L1_FORMULAS
-// 		break;
-// 	case 2:
-// 		tma_collection->cnt = TMA_NR_L2_FORMULAS;
-// 		TMA_L2_FORMULAS
-// 		break;
-// 	case 3:
-// 		tma_collection->cnt = TMA_NR_L3_FORMULAS;
-// 		TMA_L3_FORMULAS
-// 		break;
-// 	default:
-// 		pr_warn("Unrecognized TMA level %u\n", level);
-// 		return;
-// 	}
-// #undef X_TMA_LEVELS_FORMULAS
-// 	atomic64_inc(&tma_collection->nr_samples);
-
-// 	evaluate_tma_level(pmcs_collection);
-// }
 
 /* TODO Restore */
 static void compute_level_switch(struct pmcs_collection *collection)
 {
-	uint level = this_cpu_read(pcpu_current_tma_lvl);
+	uint level = this_cpu_read(pcpu_pmus_metadata.tma_level);
 
 	gbl_tma_levels[level].compute(collection);
 
