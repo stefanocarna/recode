@@ -130,6 +130,9 @@ def action_extract_tma(args):
         return
 
     cpuList = []
+    cpuTimes = []
+    cpuData = []
+    files = []
 
     file = open(args, "w")
 
@@ -144,17 +147,45 @@ def action_extract_tma(args):
             df = df.sort_values(by=["TSC"])
             df = df.reset_index(drop=True)
 
-            result = df.to_json(orient="split")
-            parsed = json.loads(result)
+            cpuData.append(df)
+            cpuTimes = [*cpuTimes, *(df["TSC"].to_numpy())]
+            files.append(cpuFile)
 
-            cpuDict = {}
-            cpuDict["id"] = cpuFile
-            cpuDict["data"] = parsed
-            cpuList.append(cpuDict)
+
         else:
             print("No data on" + cpuFile)
 
         pcr.close()
+
+
+    cpuTimes = sorted(set(cpuTimes))
+    times = pd.DataFrame(cpuTimes, columns=['TSC'])
+
+    for i, data in enumerate(cpuData):
+        joinedData = pd.merge(data, times, how="right", on=["TSC"])
+
+        # fill null values on first row
+        if (pd.isnull(joinedData.iloc[0,0])):
+            app = joinedData.iloc[0]["TSC"]
+            joinedData.iloc[0] = data.iloc[0]
+            joinedData.at[0, "TSC"] = app
+
+        # fill null values
+        for index, row in joinedData.iterrows():
+            if pd.isnull(row["PID"]):
+                app = joinedData.iloc[index]["TSC"]
+                joinedData.iloc[index] = joinedData.iloc[index-1]
+                joinedData. at[index, "TSC"] = app
+
+        result = joinedData.to_json(orient="split")
+        parsed = json.loads(result)
+
+        cpuDict = {}
+        cpuDict["id"] = files[i]
+        cpuDict["data"] = parsed
+        cpuList.append(cpuDict)
+
+
 
     file.write(json.dumps(cpuList, indent=4))
     file.write("\n")
