@@ -2,7 +2,7 @@
 
 #include "power.h"
 #include "recode.h"
-#include "plugins/recode_tma.h"
+#include "logic/tma.h"
 
 
 

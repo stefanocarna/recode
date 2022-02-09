@@ -1,15 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
+#include "linux/slab.h"
+
 #include "recode.h"
-#include "hooks.h"
-#include "device/proc.h"
+#include "pmu_abi.h"
 
-#include "plugins/recode_tma.h"
 #include "tma_scheduler.h"
-
-#include <linux/module.h>
-#include <linux/moduleparam.h>
-
-enum recode_state __read_mostly recode_state = OFF;
 
 void aggregate_tma_profile(struct tma_profile *proc_profile,
 			   struct tma_profile *group_profile)
@@ -55,40 +50,39 @@ void print_tma_metrics(uint id, struct tma_profile *profile)
 #undef X_TMA_LEVELS_FORMULAS
 }
 
-void recode_set_state(uint state)
+enum recode_state_custom { KILL = IDLE + 1 };
+
+int rf_set_state_custom(int old_state, int state)
 {
-	if (recode_state == state)
-		return;
-
-	switch (state) {
-	case KILL:
+	if (state == KILL) {
 		signal_to_all_groups(SIGKILL);
-		fallthrough;
-	case OFF:
-		pr_info("Recode state: OFF\n");
-		recode_state = OFF;
-		disable_pmcs_global();
-		disable_scheduler();
-		/* Enable all ? */
-		// schedule_all_groups();
-		return;
-	case SYSTEM:
-		if (!nr_groups) {
-			pr_warn("Cannot enable Recode withoutr groups\n");
-			break;
-		}
-
-		enable_scheduler();
-		pr_info("Recode ready for SYSTEM\n");
-		break;
-	default:
-		pr_warn("Recode invalid state\n");
-		return;
+		rf_set_state_off(old_state);
+		return 0;
 	}
 
-	recode_state = state;
+	pr_warn("Recode invalid state\n");
+	return -1;
 }
 
+void rf_set_state_off(int old_state)
+{
+	pr_info("Recode state: OFF\n");
+	pmudrv_set_state(false);
+	disable_scheduler();
+}
+
+void rf_set_state_system(int old_state)
+{
+	if (!nr_groups) {
+		pr_warn("Cannot enable Recode withoutr groups\n");
+	} else {
+		pr_info("Recode ready for SYSTEM\n");
+		pmudrv_set_state(true);
+		enable_scheduler();
+	}
+}
+
+/* TODO integrate into PoP */
 /* Register process to activity profiler  */
 int attach_process(struct task_struct *tsk, char *gname)
 {
@@ -128,12 +122,16 @@ no_data:
 	return err;
 }
 
-static void on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
+void rf_on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
 {
 	// u64 sound = 0;
 	struct group_entity *group;
 	struct tma_profile *profile;
 	struct pmcs_collection *pmcs_collection;
+	struct tma_collection *tma_collection;
+
+	/* pmcs_collection should be correct as long as it accessed here */
+	tma_collection = this_cpu_read(pcpu_tma_collection);
 
 	// atomic_inc(&pmis);
 	// pr_info("Got PMI on TMA: %u:%u\n", current->tgid, current->pid);
@@ -156,7 +154,8 @@ static void on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
 	}
 
 	// compute_tma_metrics_smp(pmcs_collection, &profile->tma);
-	compute_tma_histotrack_smp(pmcs_collection, profile->histotrack,
+	compute_tma_histotrack_smp(pmcs_collection, tma_collection,
+				   profile->histotrack,
 				   profile->histotrack_comp,
 				   &profile->nr_samples);
 
@@ -182,72 +181,3 @@ static void on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
 	// 	}
 	// }
 }
-
-static __init int recode_init(void)
-{
-	int err = 0;
-
-	pr_info("Mounting with TMA module\n");
-
-	err = recode_groups_init();
-	if (err) {
-		pr_err("Cannot initialize groups\n");
-		goto no_groups;
-	}
-
-	err = register_system_hooks();
-	if (err)
-		goto no_hooks;
-
-	err = recode_init_proc();
-	if (err)
-		goto no_proc;
-
-	register_proc_group();
-	register_proc_csched();
-
-	err = recode_tma_init();
-	if (err)
-		goto no_tma;
-
-	register_on_pmi_callback(on_pmi_callback);
-
-	/* Enable PMU module support */
-	pmudrv_set_state(true);
-
-	pr_info("Module loaded\n");
-	return err;
-no_tma:
-	recode_fini_proc();
-no_proc:
-	unregister_system_hooks();
-no_hooks:
-	recode_groups_fini();
-no_groups:
-	return err;
-}
-
-static void __exit recode_exit(void)
-{
-	recode_set_state(OFF);
-
-	pmudrv_set_state(false);
-
-	/* Unregister callback */
-	register_on_pmi_callback(NULL);
-
-	recode_tma_fini();
-
-	recode_fini_proc();
-	unregister_system_hooks();
-
-	recode_groups_fini();
-
-	pr_info("Module removed\n");
-}
-
-module_init(recode_init);
-module_exit(recode_exit);
-
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Stefano Carna'");

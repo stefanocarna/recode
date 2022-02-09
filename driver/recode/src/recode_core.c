@@ -29,8 +29,6 @@
 #include "logic/recode_security.h"
 #endif
 
-#include "hooks.h"
-
 bool buffering_state = true;
 bool buffering_deep_state = true;
 
@@ -164,31 +162,6 @@ __weak void rf_after_hook_sched_in(struct task_struct *prev,
 	// }
 }
 
-static void recode_hook_sched_in(ARGS_SCHED_IN)
-{
-	switch (recode_state) {
-	case OFF:
-		disable_pmcs_local(false);
-		return;
-	case IDLE:
-	case SYSTEM:
-		enable_pmcs_local(false);
-		break;
-	case PROFILE:
-		/* Toggle PMI */
-		if (!query_tracked(next))
-			disable_pmcs_local(false);
-		else
-			enable_pmcs_local(false);
-		break;
-	default:
-		if (rf_hook_sched_in_custom_state(prev, next))
-			return;
-	}
-
-	rf_after_hook_sched_in(prev, next);
-}
-
 static void manage_pmu_state(void *dummy)
 {
 	/* This is not precise */
@@ -275,7 +248,7 @@ void recode_set_state(int state)
 }
 
 /* Register process to activity profiler  */
-int attach_process(struct task_struct *tsk, char *gname)
+__weak int attach_process(struct task_struct *tsk, char *gname)
 {
 	int err;
 
@@ -295,33 +268,12 @@ int attach_process(struct task_struct *tsk, char *gname)
 }
 
 /* Remove registered thread from profiling activity */
-void detach_process(struct task_struct *tsk)
+__weak void detach_process(struct task_struct *tsk)
 {
 	pr_info("Detaching process: [%u:%u]\n", tsk->tgid, tsk->pid);
 	untrack_thread(tsk);
 }
 
-int register_system_hooks(void)
-{
-	int err = 0;
-
-	err = register_hook(SCHED_IN, recode_hook_sched_in);
-
-	if (err) {
-		pr_info("Cannot register SCHED_IN callback\n");
-		goto end;
-	} else {
-		pr_info("Registered SCHED_IN callback\n");
-	}
-
-end:
-	return err;
-}
-
-void unregister_system_hooks(void)
-{
-	unregister_hook(SCHED_IN, recode_hook_sched_in);
-}
 
 // void setup_hw_events_from_proc(pmc_evt_code *hw_events_codes, unsigned cnt)
 // {

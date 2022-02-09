@@ -104,7 +104,7 @@ skip:
 
 enum recode_state_custom { TUNING = IDLE + 1 };
 
-__weak int rf_set_state_custom(int old_state, int state)
+int rf_set_state_custom(int old_state, int state)
 {
 	char *type;
 	int k;
@@ -139,7 +139,7 @@ void rf_before_set_state(int old_state, state)
 }
 
 
-__weak void rf_after_hook_sched_in(struct task_struct *prev,
+void rf_after_hook_sched_in(struct task_struct *prev,
 				   struct task_struct *next)
 // void on_ctx(struct task_struct *prev, bool prev_on, bool curr_on)
 {

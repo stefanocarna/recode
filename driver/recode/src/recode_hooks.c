@@ -4,11 +4,34 @@
 
 #include "pmu.h"
 #include "pmu_core.h"
+#include "recode.h"
 
-#include "hooks.h"
+__weak void pop_hook_sched_in(ARGS_SCHED_IN)
+{
+	switch (recode_state) {
+	case OFF:
+		disable_pmcs_local(false);
+		return;
+	case IDLE:
+	case SYSTEM:
+		enable_pmcs_local(false);
+		break;
+	case PROFILE:
+		/* Toggle PMI */
+		if (!query_tracked(next))
+			disable_pmcs_local(false);
+		else
+			enable_pmcs_local(false);
+		break;
+	default:
+		if (rf_hook_sched_in_custom_state(prev, next))
+			return;
+	}
 
-static void pop_hook_proc_fork(void *data, struct task_struct *parent,
-			       struct task_struct *child)
+	rf_after_hook_sched_in(prev, next);
+}
+
+__weak void pop_hook_proc_fork(ARGS_PROC_FORK)
 {
 	// if (!pmu_enabled)
 	// 	return;
@@ -21,17 +44,8 @@ static void pop_hook_proc_fork(void *data, struct task_struct *parent,
 	preempt_disable_notrace();
 }
 
-static void pop_hook_sched_in(void *data, bool preempt,
-			      struct task_struct *prev,
-			      struct task_struct *next)
-{
-	// if (!pmu_enabled)
-	// 	return;
 
-	// reset_hw_events_local();
-}
-
-static void pop_hook_proc_exit(void *data, struct task_struct *p)
+__weak void pop_hook_proc_exit(ARGS_PROC_EXIT)
 {
 	destroy_task_data(p);
 }

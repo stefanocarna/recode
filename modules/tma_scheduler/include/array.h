@@ -64,7 +64,7 @@ typedef u32 array_count_t;
 #define array_is_empty(self) (array_count(self) == 0)
 
 #define array_for_each(x, self)                                                \
-	for (array_count_t x = 0; x < array_count(self); ++x)
+	for (x = 0; x < array_count(self); ++x)
 
 #define array_init(self)                                                       \
 	__extension__({ array_init_with_size(self, INIT_SIZE_ARRAY); })

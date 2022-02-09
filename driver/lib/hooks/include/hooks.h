@@ -1,4 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
+#ifndef _HOOKS_H
+#define _HOOKS_H
 
 #include <linux/binfmts.h>
 
@@ -32,3 +34,5 @@ enum hook_type {
 
 int register_hook(enum hook_type type, void *func);
 void unregister_hook(enum hook_type type, void *func);
+
+#endif /* _HOOKS_H */

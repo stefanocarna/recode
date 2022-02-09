@@ -8,6 +8,7 @@ import time
 
 PLUGIN_NAME = "stress"
 HELP_DESC = "Syntactic Sugar to execute available qemu instances"
+globalConfig = None
 
 WD_PATH = dirname(dirname(dirname(abspath(__file__))))
 WRAPPER_PATH = dirname(dirname(abspath(__file__)))
@@ -28,7 +29,7 @@ def setParserArguments(parser):
     plug_parser.add_argument(
         "-s",
         "--stressors",
-        nargs='+',
+        nargs="+",
         help="Execute the list of stressor. each element must be stressor:workers",
     )
 
@@ -77,7 +78,18 @@ def setParserArguments(parser):
     )
 
 
-usedStressors = ["matrix", "cpu", "io", "matrix-3d", "cache", "bsearch", "qsort", "hdd", "fork", "bigheap"]
+usedStressors = [
+    "matrix",
+    "cpu",
+    "io",
+    "matrix-3d",
+    "cache",
+    "bsearch",
+    "qsort",
+    "hdd",
+    "fork",
+    "bigheap",
+]
 
 
 def getAvailableStressors():
@@ -107,31 +119,40 @@ def check_stressors(stressorList):
 
 
 def action_exec(args):
-    wrapper = "sponsor"
+    wrapper = "wrapper_fax"
     if not isfile(wrapper):
         # Compile Wrapper
         cmd("make")
 
-    _cmd_wrapper = [WRAPPER_PATH + "/" + wrapper]
+    _cmd_wrapper = [globalConfig.readPath("accessory") + "/" + wrapper]
     _cmd_stress = ["stress-ng"]
 
     if args.timeout is not None and args.timeout > 0:
-        _cmd_stress =_cmd_stress + ["--timeout", str(args.timeout)]
+        _cmd_stress = _cmd_stress + ["--timeout", str(args.timeout)]
 
     if args.cpu is not None and (args.cpu > 0 or args.cpu <= cpu_count()):
-        _cmd_stress =_cmd_stress + ["--taskset", str(args.cpu)]
+        _cmd_stress = _cmd_stress + ["--taskset", str(args.cpu)]
 
     if args.workers < 1:
         args.workers = 1
 
-    cmd(["python", "tools/recode.py", "module", "-m", "tma_scheduler", "-c", "-l", "-u"])
+    cmd(
+        ["python", globalConfig.readPath("wd") + "/recode.py", "module", "-c", "tma_scheduler", "-l", "-u"]
+    )
 
     processList = []
     for sw in args.stressors:
         stressName, stressWorkers = sw.split(":")
-        processList.append(dcmd(_cmd_wrapper + [stressName] + _cmd_stress + ["--" + stressName, stressWorkers]))
+        processList.append(
+            dcmd(
+                _cmd_wrapper
+                + [stressName]
+                + _cmd_stress
+                + ["--" + stressName, stressWorkers]
+            )
+        )
 
-    dcmd(["python", "tools/recode.py", "config", "-s", "system"])
+    dcmd(["python", globalConfig.readPath("wd") + "/recode.py", "config", "-tma", "on", "-s", "system"])
 
     for p in processList:
         if p is not None:
@@ -159,7 +180,7 @@ def action_random_exec(args):
 
     if args.random == args.workers and args.random <= len(stressors):
         total = args.random
-        while (total > len(stressors)):
+        while total > len(stressors):
             for i in range(len(stressors)):
                 args.stressors.append(str(stressors[i] + ":1"))
 
@@ -173,7 +194,7 @@ def action_random_exec(args):
         if args.workers < 1:
             args.workers = 1
         total = args.random
-        while (total > len(stressors)):
+        while total > len(stressors):
             for i in range(len(stressors)):
                 args.stressors.append(str(stressors[i] + ":" + str(args.workers)))
 
@@ -204,10 +225,14 @@ def validate_args(args):
 
 
 def compute(args, config):
+    global globalConfig
+
     if not validate_args(args):
         return False
 
-    chdir(WD_PATH)
+    globalConfig = config
+
+    chdir(globalConfig.readPath("WD"))
 
     action_random_exec(args)
 

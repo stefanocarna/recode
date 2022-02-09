@@ -5,7 +5,6 @@
 #include <linux/slab.h>
 
 #include "hooks.h"
-#include "plugins/recode_tma.h"
 
 #include "scheduler.h"
 
@@ -80,7 +79,7 @@ void prepare_evaluation(void)
 
 int prepare_consolidation(void)
 {
-	int i;
+	int i, h, s, w;
 	int mbins;
 	int total_occupancy = 0;
 
@@ -111,16 +110,16 @@ int prepare_consolidation(void)
 
 	pr_info("Available CS: %u\n", sched_conf.nr_available_cs);
 
-	for (int h = 0; h < sched_conf.nr_available_cs; ++h) {
+	for (h = 0; h < sched_conf.nr_available_cs; ++h) {
 		struct csched *cs = &sched_conf.available_cs[h];
 
 		pr_info("CS [%u] (%u)\n", h, cs->nr_parts);
-		for (int s = 0; s < cs->nr_parts; ++s) {
+		for (s = 0; s < cs->nr_parts; ++s) {
 			struct csched_part *cs_p = &cs->parts[s];
 
 			pr_info("\t CSP [%u]: ", s);
 
-			for (int w = 0; w < cs_p->nr_groups; ++w)
+			for (w = 0; w < cs_p->nr_groups; ++w)
 				pr_cont(" %u", cs_p->groups[w]->id);
 		}
 	}
@@ -182,8 +181,10 @@ int schedule_action(void)
 			return prepare_consolidation();
 		return STD_TICK;
 	case CONSOLIDATION:
+		int time;
+
 		pr_info("CONSOLIDATION\n");
-		int time = consolidate_next_partition();
+		time = consolidate_next_partition();
 
 		if (time)
 			return time;
@@ -205,8 +206,9 @@ static enum hrtimer_restart hrtimer_hander(struct hrtimer *timer)
 	int time = schedule_action();
 
 	if (time) {
-		pr_info("TICK ADJUSTMENT: %u\n", time);
 		ktime_t tick = (time * BASE_TICK) / 100;
+
+		pr_info("TICK ADJUSTMENT: %u\n", time);
 
 		/* If restarting the next wakeup should be moved forward */
 		hrtimer_forward_now(

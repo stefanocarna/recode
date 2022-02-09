@@ -1,13 +1,8 @@
 from color_printer import *
 
-
 PLUGIN_NAME = "config"
 HELP_DESC = "Configure Recode Module's paramenters"
-
-
-RECODE_PROC_PATH = "/proc/recode"
-
-PMUDRV_PROC_PATH = "/proc/pmudrv"
+globalConfig = None
 
 
 def setParserArguments(parser):
@@ -34,6 +29,15 @@ def setParserArguments(parser):
     )
 
     plug_parser.add_argument(
+        "-tma",
+        "--tma",
+        type=str,
+        required=False,
+        choices=["on", "off"],
+        help="Enable or disable TMA",
+    )
+
+    plug_parser.add_argument(
         "-f",
         "--frequency",
         metavar="F",
@@ -55,7 +59,7 @@ def setParserArguments(parser):
         "-m",
         "--mitigations",
         type=str,
-        nargs='+',
+        nargs="+",
         metavar="CONF",
         choices=["te", "exile", "llc", "verbose", "none"],
         required=False,
@@ -64,7 +68,7 @@ def setParserArguments(parser):
 
 
 def action_state(action):
-    # path = RECODE_PROC_PATH + "/security/tuning"
+    # path = globalConfig.readPath("recode_proc") + "/security/tuning"
 
     # if type == "FR":
     #     _file = open(path, "w")
@@ -75,7 +79,7 @@ def action_state(action):
     #     _file.write("1")
     #     _file.close()
 
-    path = RECODE_PROC_PATH + "/state"
+    path = globalConfig.readPath("recode_proc") + "/state"
 
     if action == "off":
         value = "0"
@@ -101,6 +105,22 @@ def action_state(action):
     _file.close()
 
 
+def action_tma(action):
+    path = globalConfig.readPath("pmudrv_proc") + "/tma"
+
+    if action == "off":
+        value = "0"
+    elif action == "on":
+        value = "1"
+    else:
+        pr_warn("Something wrong: --tma " + action + " illegal")
+        return
+
+    _file = open(path, "w")
+    _file.write(value)
+    _file.close()
+
+
 def action_frequency(value):
     value = int(value)
     if value < 1 and value > 48:
@@ -109,7 +129,7 @@ def action_frequency(value):
 
     pmc_mask = (1 << value) - 1
 
-    path = PMUDRV_PROC_PATH + "/frequency"
+    path = globalConfig.readPath("pmudrv_proc") + "/frequency"
 
     _file = open(path, "w")
 
@@ -122,7 +142,7 @@ def get_info(info):
         pr_warn("Cannot read " + info + " info. Returning 0")
         return 0
 
-    path = PMUDRV_PROC_PATH + "/" + info
+    path = globalConfig.readPath("pmudrv_proc") + "/" + info
     _file = open(path, "r")
     value = _file.readlines()
     _file.close()
@@ -137,26 +157,26 @@ def action_info():
 
 
 def action_mitigations(mitigations):
-    
-    path = RECODE_PROC_PATH + "/mitigations"
+
+    path = globalConfig.readPath("recode_proc") + "/mitigations"
 
     _file = open(path, "w")
 
     mask = 0
 
-    #define DM_G_LLC_FLUSH			0	
-    #define DM_G_CPU_EXILE			1	
-    #define DM_G_TE_MITIGATE		2
-    #define DM_G_VERBOSE			18	
+    # define DM_G_LLC_FLUSH			0
+    # define DM_G_CPU_EXILE			1
+    # define DM_G_TE_MITIGATE		2
+    # define DM_G_VERBOSE			18
 
     if "llc" in mitigations:
-        mask |= (1 << 0)
+        mask |= 1 << 0
     if "exile" in mitigations:
-        mask |= (1 << 1)
+        mask |= 1 << 1
     if "te" in mitigations:
-        mask |= (1 << 2)
+        mask |= 1 << 2
     if "verbose" in mitigations:
-        mask |= (1 << 18)
+        mask |= 1 << 18
     if "none" in mitigations:
         mask = 0
 
@@ -172,11 +192,18 @@ def validate_args(args):
 
 
 def compute(args, config):
+    global globalConfig
+
     if not validate_args(args):
         return False
 
+    globalConfig = config
+
     if args.frequency:
         action_frequency(args.frequency)
+
+    if args.tma:
+        action_tma(args.tma)
 
     if args.state:
         action_state(args.state)

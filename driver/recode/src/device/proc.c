@@ -15,6 +15,11 @@ __weak int rf_after_proc_init(void)
 	return 0;
 }
 
+__weak void rf_before_proc_fini(void)
+{
+	/* Do nothing */
+}
+
 int recode_init_proc(void)
 {
 	int err = 0;
@@ -31,12 +36,12 @@ int recode_init_proc(void)
 	if (rf_after_proc_init())
 		goto no_proc;
 
-// #ifdef SECURITY_MODULE_ON
-// 	SUCCESS_OR_EXIT(recode_register_proc_mitigations);
-// 	SUCCESS_OR_EXIT(recode_register_proc_thresholds);
-// 	SUCCESS_OR_EXIT(recode_register_proc_security);
-// 	SUCCESS_OR_EXIT(recode_register_proc_statistics);
-// #endif
+	// #ifdef SECURITY_MODULE_ON
+	// 	SUCCESS_OR_EXIT(recode_register_proc_mitigations);
+	// 	SUCCESS_OR_EXIT(recode_register_proc_thresholds);
+	// 	SUCCESS_OR_EXIT(recode_register_proc_security);
+	// 	SUCCESS_OR_EXIT(recode_register_proc_statistics);
+	// #endif
 	return err;
 
 no_proc:
@@ -47,5 +52,7 @@ no_dir:
 
 void recode_fini_proc(void)
 {
+	rf_before_proc_fini();
+
 	proc_remove(root_pd_dir);
 }

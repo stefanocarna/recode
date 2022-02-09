@@ -82,7 +82,9 @@ int min_bins(struct bucket *buckets, size_t size, int cap)
 
 static void w2d_array_free(w2d_array_t ws)
 {
-	for (array_count_t i = 0; i < array_count(ws); ++i)
+	array_count_t i;
+
+	for (i = 0; i < array_count(ws); ++i)
 		array_fini(array_get_at(ws, i));
 
 	array_fini(ws);
@@ -90,7 +92,8 @@ static void w2d_array_free(w2d_array_t ws)
 
 static void w3d_array_free(w3d_array_t wss)
 {
-	for (array_count_t i = 0; i < array_count(wss); ++i)
+	array_count_t i;
+	for (i = 0; i < array_count(wss); ++i)
 		w2d_array_free(array_get_at(wss, i));
 
 	array_fini(wss);
@@ -99,7 +102,9 @@ static void w3d_array_free(w3d_array_t wss)
 static int w_array_sum(const w_array_t ws)
 {
 	int ret = 0;
-	for (array_count_t i = 0; i < array_count(ws); ++i)
+	array_count_t i;
+
+	for (i = 0; i < array_count(ws); ++i)
 		ret += array_get_at(ws, i).k;
 
 	return ret;
@@ -107,10 +112,11 @@ static int w_array_sum(const w_array_t ws)
 
 static w2d_array_t copy_2d_array(const w2d_array_t ws)
 {
+	array_count_t i;
 	w2d_array_t ret;
 	array_init_with_size(ret, array_capacity(ws));
 
-	for (array_count_t i = 0; i < array_count(ws); ++i) {
+	for (i = 0; i < array_count(ws); ++i) {
 		w_array_t *a = &array_get_at(ws, i);
 		w_array_t ins;
 		array_init_with_size(ins, array_capacity(*a));
@@ -126,6 +132,7 @@ w3d_array_t partition_k_cap(const weight_t *c, array_count_t s, array_count_t k,
 			    int max_w)
 {
 	w3d_array_t parts;
+	array_count_t i, j;
 
 	array_init(parts);
 
@@ -146,7 +153,7 @@ w3d_array_t partition_k_cap(const weight_t *c, array_count_t s, array_count_t k,
 
 	w3d_array_t prev = partition_k_cap(c + 1, s - 1, k, max_w);
 
-	for (array_count_t i = 0; i < array_count(prev); ++i) {
+	for (i = 0; i < array_count(prev); ++i) {
 		w2d_array_t *smaller = &array_get_at(prev, i);
 
 		if (array_count(parts) > 64)
@@ -154,7 +161,7 @@ w3d_array_t partition_k_cap(const weight_t *c, array_count_t s, array_count_t k,
 
 		array_count_t l = array_count(*smaller);
 		// insert `first` in each of the subpartition's subsets
-		for (array_count_t j = 0; j < l; ++j) {
+		for (j = 0; j < l; ++j) {
 			w_array_t *t = &array_get_at(*smaller, j);
 
 			if (w_array_sum(*t) + (*c).k > max_w)
@@ -189,12 +196,13 @@ size_t compute_k_partitions_min_max_cap(struct csched **av_cs_p,
 					struct bucket *buckets, size_t size,
 					int min_cap, int max_cap)
 {
-	int i, k;
+	int k;
 	bool valid;
 	int w_sum = 0;
 	int nr_cs = 1;
 	struct csched *av_cs;
 	w3d_array_t parts, goodParts;
+	array_count_t i, j, l;
 
 	for (i = 0; i < size; ++i)
 		w_sum += buckets[i].k;
@@ -256,7 +264,7 @@ less_part:
 	array_init(goodParts);
 
 	/* Filter unwanted partition */
-	for (array_count_t i = 0; i < array_count(parts); ++i) {
+	for (i = 0; i < array_count(parts); ++i) {
 		w2d_array_t res = array_get_at(parts, i);
 		valid = true;
 
@@ -317,7 +325,7 @@ less_part:
 
 	av_cs[0].parts[0].cpu_weight = w_sum;
 
-	for (array_count_t i = 1; i < nr_cs; ++i) {
+	for (i = 1; i < nr_cs; ++i) {
 
 		w2d_array_t res = array_get_at(parts, i - 1);
 

@@ -29,6 +29,9 @@ extern struct proc_dir_entry *root_pd_dir;
 extern int recode_init_proc(void);
 extern void recode_fini_proc(void);
 
+extern int rf_after_proc_init(void);
+extern void rf_before_proc_fini(void);
+
 extern int recode_register_proc_cpus(void);
 // extern int register_proc_frequency(void);
 // extern int register_proc_sample_info(void);

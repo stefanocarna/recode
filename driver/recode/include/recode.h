@@ -9,6 +9,7 @@
 #include <linux/string.h>
 
 #include "pmu_structs.h"
+#include "hooks.h"
 
 
 #if __has_include(<asm/fast_irq.h>)
@@ -122,6 +123,16 @@ extern void rf_set_state_profile(int old_state);
 extern void rf_set_state_system(int old_state);
 extern int rf_set_state_custom(int old_state, int state);
 extern void rf_before_set_state(int old_state, int state);
+
+int rf_hook_sched_in_custom_state(struct task_struct *prev,
+					 struct task_struct *next);
+void rf_after_hook_sched_in(struct task_struct *prev,
+				   struct task_struct *next);
+
+/* Pop System Hooks */
+extern void pop_hook_sched_in(ARGS_SCHED_IN);
+extern void pop_hook_proc_fork(ARGS_PROC_FORK);
+extern void pop_hook_proc_exit(ARGS_PROC_EXIT);
 
 
 int system_hooks_init(void);

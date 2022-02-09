@@ -116,7 +116,7 @@ def action_load_debug():
 
 def action_compile(args):
     nr_cpu = str(os.cpu_count())
-    action = "make " + "PLUGIN=" + args + " -j" + nr_cpu
+    action = "make " + "POP_MODULE=" + args + " -j" + nr_cpu
     pr_info("Compiling module...")
     return __perform_action(action)
 

@@ -82,6 +82,7 @@ void compute_tma_metrics_smp(struct pmcs_collection *pmcs_collection,
 			     struct tma_collection *tma_collection);
 
 void compute_tma_histotrack_smp(struct pmcs_collection *pmcs_collection,
+				struct tma_collection *tma_collection,
 				atomic_t (*histotrack)[TRACK_PRECISION],
 				atomic_t(*histotrack_comp),
 				atomic_t *nr_samples);

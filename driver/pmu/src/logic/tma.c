@@ -321,7 +321,7 @@ int tma_init(void)
 	for_each_possible_cpu(k) {
 		per_cpu(pcpu_tma_collection, k) =
 			kmalloc(struct_size(pcpu_tma_collection, metrics,
-				TMA_NR_L3_FORMULAS),
+					    TMA_NR_L3_FORMULAS),
 				// sizeof(struct tma_collection) +
 				// 	(sizeof(u64) * TMA_NR_L3_FORMULAS),
 				GFP_KERNEL);
@@ -551,3 +551,39 @@ void compute_tma(struct pmcs_collection *pmu_collection,
 #undef X_TMA_LEVELS_FORMULAS
 	compute_level_switch(pmu_collection);
 }
+
+/* TODO Round - This must be implemented upon basic tma logic */
+void compute_tma_histotrack_smp(struct pmcs_collection *pmcs_collection,
+				struct tma_collection *tma_collection,
+				atomic_t (*histotrack)[TRACK_PRECISION],
+				atomic_t(*histotrack_comp),
+				atomic_t *nr_samples)
+{
+#define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
+	atomic_inc(&histotrack[idx][track_index(                               \
+		tma_eval_##name(pmcs_collection->pmcs))]);                     \
+	atomic_add(tma_eval_##name(pmcs_collection->pmcs),                     \
+		   &histotrack_comp[idx]);
+
+	switch (tma_collection->level) {
+	case 0:
+		TMA_L0_FORMULAS
+		break;
+	case 1:
+		TMA_L1_FORMULAS
+		break;
+	case 2:
+		TMA_L2_FORMULAS
+		break;
+	case 3:
+		TMA_L3_FORMULAS
+		break;
+	default:
+		pr_warn("Unrecognized TMA level %u\n", tma_collection->level);
+		return;
+	}
+#undef X_TMA_LEVELS_FORMULAS
+
+	compute_level_switch(pmcs_collection);
+}
+EXPORT_SYMBOL(compute_tma_histotrack_smp);

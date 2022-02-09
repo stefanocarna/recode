@@ -1,6 +1,6 @@
 
 
-#include "../tma_scheduler.h"
+#include "tma_scheduler.h"
 
 #define this_cphase_cs (sched_conf.available_cs[sched_conf.cphase_cs_i])
 #define this_cphase_cs_part                                                    \
@@ -18,7 +18,7 @@
 #define WARMUP_TICK	(5 * STD_TICK)
 #define MAX_ROUND	10
 
-#define BASE_TICK_SEC	1
+#define BASE_TICK_SEC	3
 #define BASE_TICK_NSEC	20000000
 
 enum sched_state {

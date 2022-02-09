@@ -39,20 +39,39 @@ class RecodeConfig:
         except IOError:
             None
 
-    """ If value is None -> REMOVE, if key exists -> UPDATE, else -> ADD"""
-    def update(self, key, value):
-        if not self.config.has_section('config'):
-            self.config.add_section('config')
+    def updateConfig(self, key, value):
+        self.updateSection(key, value, 'config')
 
-        self.config['config'][key] = value
+    def readConfig(self, key):
+        return self.readSection(key, 'config')
+
+    def updatePath(self, key, value):
+        self.updateSection(key, value, 'path')
+
+    def readPath(self, key):
+        return self.readSection(key, 'path')
+
+    """ If value is None -> REMOVE, if key exists -> UPDATE, else -> ADD"""
+    def updateSection(self, key, value, section):
+        if not self.config.has_section(section):
+            self.config.add_section(section)
+
+        self.config[section][key] = value
         try:
             with open(CONFIG_FILE, 'w') as f:
                 self.config.write(f)
         except IOError:
             print("Error while writing " + self.file)
 
-    def read(self, key):
-        return self.config['config'][key]
+    def readSection(self, key, section):
+        return self.config[section][key]
+
+
+def fillCommonConfig(config):
+    config.updatePath("wd", dirname(abspath(__file__)))
+    config.updatePath("accessory", dirname(abspath(__file__)) + "/accessory/obj")
+    config.updatePath("recode_proc", "/proc/recode")
+    config.updatePath("pmudrv_proc", "/proc/pmudrv")
 
 
 def parser_init():
@@ -86,6 +105,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config = RecodeConfig(CONFIG_FILE)
+
+    fillCommonConfig(config)
 
     cmdList = plug_autotest.compute(args, config)
 
