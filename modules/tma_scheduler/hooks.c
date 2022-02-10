@@ -7,7 +7,7 @@
 
 #include <linux/slab.h>
 
-void hook_proc_fork(ARGS_PROC_FORK)
+void pop_hook_proc_fork(ARGS_PROC_FORK)
 {
 	struct group_entity *group;
 
@@ -23,7 +23,7 @@ void hook_proc_fork(ARGS_PROC_FORK)
 	}
 }
 
-void hook_proc_exit(ARGS_PROC_EXIT)
+void pop_hook_proc_exit(ARGS_PROC_EXIT)
 {
 	struct group_entity *group;
 	struct tma_profile *profile;

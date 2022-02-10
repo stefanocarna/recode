@@ -117,7 +117,8 @@ static int insert_process_to_group_list(pid_t pid, struct group_entity *group,
 	group->nr_processes++;
 	spin_unlock_irqrestore(&group->lock, flags);
 
-	pr_info("[G] Add #p %u @g %u (%u)\n", pid, group->id, group->nr_processes);
+	pr_info("[G] Add #p %u @g %u (%u)\n", pid, group->id,
+		group->nr_processes);
 	return 0;
 }
 
@@ -140,7 +141,8 @@ remove_process_from_group_list(pid_t pid, struct group_entity *group)
 	spin_unlock_irqrestore(&group->lock, flags);
 
 	if (exist) {
-		pr_info("[G] Del #p %u @g %u (%u)\n", pid, group->id, group->nr_processes);
+		pr_info("[G] Del #p %u @g %u (%u)\n", pid, group->id,
+			group->nr_processes);
 		pentity = cur->proc;
 		kfree(cur);
 	}
@@ -189,7 +191,8 @@ void remove_process_from_processes_map(pid_t pid, struct group_entity *group)
 
 	if (exist) {
 		kvfree(cur);
-		pr_debug("[P] Del #p %u @g %u (%u)\n", pid, group->id, group->nr_processes);
+		pr_debug("[P] Del #p %u @g %u (%u)\n", pid, group->id,
+			 group->nr_processes);
 	}
 }
 
@@ -252,8 +255,10 @@ void *unregister_process_from_group(pid_t pid, struct group_entity *group)
 	spin_lock_irqsave(&group->lock, flags);
 	/* Update stats */
 	if (group->profiling) {
-		pentity->utime_snap = pentity->task->utime - pentity->utime_snap;
-		pentity->stime_snap = pentity->task->stime - pentity->stime_snap;
+		pentity->utime_snap =
+			pentity->task->utime - pentity->utime_snap;
+		pentity->stime_snap =
+			pentity->task->stime - pentity->stime_snap;
 		group->utime += pentity->utime_snap;
 		group->stime += pentity->stime_snap;
 		if (pentity->utime_snap || pentity->stime_snap)

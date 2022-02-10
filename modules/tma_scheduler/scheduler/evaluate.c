@@ -1,6 +1,5 @@
 #include "scheduler.h"
 
-
 void start_evaluation(void)
 {
 	struct group_prof *group_fp;

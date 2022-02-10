@@ -18,7 +18,7 @@
 #define WARMUP_TICK	(5 * STD_TICK)
 #define MAX_ROUND	10
 
-#define BASE_TICK_SEC	3
+#define BASE_TICK_SEC	1
 #define BASE_TICK_NSEC	20000000
 
 enum sched_state {

@@ -11,18 +11,16 @@
 #include "pmu_structs.h"
 #include "hooks.h"
 
-
 #if __has_include(<asm/fast_irq.h>)
 #define FAST_IRQ_ENABLED 1
 #endif
-#if __has_include(<asm/fast_irq.h>) && defined(SECURITY_MODULE) 
+#if __has_include(<asm/fast_irq.h>) && defined(SECURITY_MODULE)
 #define SECURITY_MODULE_ON 1
-#elif defined(TMA_MODULE) 
+#elif defined(TMA_MODULE)
 #define TMA_MODULE_ON 1
 #endif
 
-
-#define MODNAME	"ReCode"
+#define MODNAME "ReCode"
 
 #undef pr_fmt
 #define pr_fmt(fmt) MODNAME ": " fmt
@@ -71,10 +69,12 @@ struct group_entity {
 	uint id;
 	void *data;
 	spinlock_t lock;
+
 	/* Atomicity is not required */
 	uint nr_processes;
 	struct list_head p_list;
 	bool profiling;
+
 	/* TODO Remove */
 	u64 utime;
 	u64 stime;
@@ -94,7 +94,8 @@ struct proc_entity {
 int recode_groups_init(void);
 void recode_groups_fini(void);
 
-int register_process_to_group(pid_t pid, struct group_entity *group, void *data);
+int register_process_to_group(pid_t pid, struct group_entity *group,
+			      void *data);
 
 void *unregister_process_from_group(pid_t pid, struct group_entity *group);
 
@@ -113,9 +114,7 @@ void schedule_all_groups(void);
 void start_group_stats(struct group_entity *group);
 void stop_group_stats(struct group_entity *group);
 
-
 // void setup_hw_events_from_proc(pmc_evt_code *hw_events_codes, unsigned cnt);
-
 
 extern void rf_set_state_off(int old_state);
 extern void rf_set_state_idle(int old_state);
@@ -125,15 +124,13 @@ extern int rf_set_state_custom(int old_state, int state);
 extern void rf_before_set_state(int old_state, int state);
 
 int rf_hook_sched_in_custom_state(struct task_struct *prev,
-					 struct task_struct *next);
-void rf_after_hook_sched_in(struct task_struct *prev,
-				   struct task_struct *next);
+				  struct task_struct *next);
+void rf_after_hook_sched_in(struct task_struct *prev, struct task_struct *next);
 
 /* Pop System Hooks */
 extern void pop_hook_sched_in(ARGS_SCHED_IN);
 extern void pop_hook_proc_fork(ARGS_PROC_FORK);
 extern void pop_hook_proc_exit(ARGS_PROC_EXIT);
-
 
 int system_hooks_init(void);
 void system_hooks_fini(void);
