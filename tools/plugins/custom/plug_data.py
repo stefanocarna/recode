@@ -167,16 +167,16 @@ def action_extract_tma(args):
 
         # fill null values on first row
         if (pd.isnull(joinedData.iloc[0,0])):
-            app = joinedData.iloc[0]["TSC"]
+            pApp = joinedData.iloc[0]["TSC"]
             joinedData.iloc[0] = data.iloc[0]
-            joinedData.at[0, "TSC"] = app
+            joinedData.at[0, "TSC"] = pApp
 
         # fill null values
         for index, row in joinedData.iterrows():
             if pd.isnull(row["PID"]):
-                app = joinedData.iloc[index]["TSC"]
+                pApp = joinedData.iloc[index]["TSC"]
                 joinedData.iloc[index] = joinedData.iloc[index-1]
-                joinedData. at[index, "TSC"] = app
+                joinedData. at[index, "TSC"] = pApp
 
         result = joinedData.to_json(orient="split")
         parsed = json.loads(result)

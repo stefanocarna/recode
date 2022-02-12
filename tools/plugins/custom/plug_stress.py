@@ -132,7 +132,7 @@ def action_exec(args):
         args.workers = 1
 
     cmd(
-        ["python", app.globalConf.readPath("wd") + "/recode.py", "module", "-c", "tma_scheduler", "-l", "-u"]
+        ["python", app.globalConf.readPath("tools") + "/recode.py", "module", "-c", "tma_scheduler", "-l", "-u"]
     )
 
     processList = []
@@ -147,7 +147,7 @@ def action_exec(args):
             )
         )
 
-    dcmd(["python", app.globalConf.readPath("wd") + "/recode.py", "config", "-tma", "on", "-s", "system"])
+    dcmd(["python", app.globalConf.readPath("tools") + "/recode.py", "config", "-tma", "on", "-s", "system"])
 
     for p in processList:
         if p is not None:
@@ -224,7 +224,7 @@ def compute(args):
     if not validate_args(args):
         return False
 
-    chdir(app.globalConf.readPath("WD"))
+    chdir(app.globalConf.readPath("tools"))
 
     action_random_exec(args)
 

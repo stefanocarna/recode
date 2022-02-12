@@ -70,7 +70,8 @@ class RecodeConfig:
 
 
 def fillCommonConfig(config):
-    config.updatePath("wd", dirname(abspath(__file__)))
+    config.updatePath("tools", dirname(abspath(__file__)))
+    config.updatePath("wd", dirname(dirname(abspath(__file__))))
     config.updatePath("accessory", dirname(abspath(__file__)) + "/accessory/obj")
     config.updatePath("recode_proc", "/proc/recode")
     config.updatePath("pmudrv_proc", "/proc/pmudrv")
@@ -91,6 +92,8 @@ def parser_init():
 
 
 def compute_plugins(args):
+
+    print(app.globalConf.readPath("wd"))
     for p in PLUGINS:
         p.compute(args)
 

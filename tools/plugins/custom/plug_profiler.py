@@ -136,7 +136,7 @@ def compute(args):
     if not validate_args(args):
         return False
 
-    chdir(app.globalConf.readPath("wd"))
+    chdir(app.globalConf.readPath("tools"))
 
     if args.exec:
         action_exec(args)

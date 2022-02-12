@@ -222,7 +222,7 @@ def compute(args):
     if not validate_args(args):
         return False
 
-    chdir(app.globalConf.readPath("wd"))
+    chdir(app.globalConf.readPath("tools"))
 
     action_random_exec(args)
 

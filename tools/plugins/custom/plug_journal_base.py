@@ -1930,7 +1930,7 @@ def compute(args):
     if not validate_args(args):
         return False
 
-    chdir(app.globalConf.readPath("wd"))
+    chdir(app.globalConf.readPath("tools"))
 
     if args.directory:
         DATA_DIR = args.directory + "/"
@@ -1965,7 +1965,7 @@ def compute(args):
                 "4_4_1",
             ]
         for eb in args.exec_bench:
-            chdir(app.globalConf.readPath("wd"))
+            chdir(app.globalConf.readPath("tools"))
             globals()["jbase_" + eb](args)
 
     return True
