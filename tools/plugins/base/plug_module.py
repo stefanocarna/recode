@@ -61,7 +61,6 @@ def setParserArguments(parser):
         nargs='?',
         type=str,
         required=False,
-        const="plain",
         help="Compile the module",
     )
 
@@ -72,7 +71,6 @@ def setParserArguments(parser):
         nargs='?',
         type=str,
         required=False,
-        const="plain",
         help="Clean and compile the module",
     )
 

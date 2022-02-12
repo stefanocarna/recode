@@ -25,7 +25,10 @@ static ssize_t tma_write(struct file *file, const char __user *buffer,
 	if (err)
 		return -ENOMEM;
 
-	pmudrv_set_tma(!!tma);
+	if (tma > 2)
+		return -EINVAL;
+
+	pmudrv_set_tma(tma);
 
 	return count;
 }

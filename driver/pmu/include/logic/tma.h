@@ -73,7 +73,7 @@ void update_events_index_local(struct hw_events *events);
 
 void tma_on_pmi_callback_local(void);
 
-void pmudrv_set_tma(bool tma);
+void pmudrv_set_tma(int tma_mode);
 
 void compute_tma(struct pmcs_collection *pmu_collection,
 		 struct tma_collection *tma_collection);
