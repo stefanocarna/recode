@@ -2,26 +2,16 @@ from os import chdir, cpu_count
 from os.path import isfile, dirname, abspath
 
 import sys
+sys.path.append("...")
 
-WD_PATH = dirname(dirname(dirname(abspath(__file__))))
-
-sys.path.append(WD_PATH + "/utils/base")
-sys.path.append(WD_PATH + "/utils/custom")
-sys.path.append(WD_PATH + "/plugins/base")
-
-from shell_cmd import *
-from color_printer import *
-from plug_config import *
+import utils.base.app as app
+from utils.base.shell_cmd import *
+from utils.base.color_printer import *
+from plugins.base.plug_config import *
 
 
 PLUGIN_NAME = "profiler"
 HELP_DESC = "Configure profiling activity"
-WRAPPER_PATH = WD_PATH + "/accessory/obj"
-
-
-def init(wd_path):
-    global WD_PATH
-    WD_PATH = wd_path
 
 
 def setParserArguments(parser):
@@ -100,7 +90,7 @@ def action_exec(args, profile=True):
         pr_warn("Invalid timeout (< 0). Ignore timeout")
         timeout = None
 
-    _cmd = [WRAPPER_PATH + "/" + wrapper] if profile else []
+    _cmd = [app.globalConf.readPath("accessory") + "/" + wrapper] if profile else []
 
     if cpu is not None:
         if cpu < 0 or cpu >= cpu_count():
@@ -142,11 +132,11 @@ def validate_args(args):
     return args.command == PLUGIN_NAME
 
 
-def compute(args, config):
+def compute(args):
     if not validate_args(args):
         return False
 
-    chdir(WD_PATH)
+    chdir(app.globalConf.readPath("wd"))
 
     if args.exec:
         action_exec(args)

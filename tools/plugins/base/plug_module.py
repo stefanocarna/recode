@@ -3,32 +3,17 @@ from os.path import dirname, abspath
 from shell_cmd import *
 from color_printer import *
 from pathlib import Path
-
+import sys
+sys.path.append("...")
+import utils.base.app as app
 
 PLUGIN_NAME = "module"
 HELP_DESC = "Basic interface to manage the Recode Module"
-
-WD_PATH = dirname(dirname(dirname(abspath(__file__))))
-
-
-def init(wd_path):
-    global WD_PATH
-    WD_PATH = wd_path
 
 
 def setParserArguments(parser):
 
     plug_parser = parser.add_parser(PLUGIN_NAME, help=HELP_DESC)
-
-    plug_parser.add_argument(
-        "-m",
-        "--module",
-        metavar="M",
-        nargs='?',
-        type=str,
-        required=False,
-        help="Select the module M and apply the required actions",
-    )
 
     plug_parser.add_argument(
         "-l",
@@ -137,14 +122,11 @@ def validate_args(args):
     return True
 
 
-def compute(args, config):
+def compute(args):
     if not validate_args(args):
         return False
 
-    os.chdir(WD_PATH)
-
-    if (args.module):
-        os.chdir(WD_PATH + "/modules/" + args.module)
+    os.chdir(app.globalConf.readPath("wd"))
 
     if (args.unload):
         action_unload()

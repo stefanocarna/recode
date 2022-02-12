@@ -1,11 +1,10 @@
 import os
+import sys
+sys.path.append("...")
+import utils.base.app as app
 
 PLUGIN_NAME = "autotest"
 HELP_DESC = "Configure Recode to execute test with minimum effort"
-
-
-RECODE_PROC_PATH = "/proc/recode"
-DEFAULT_DATA_FILE = "data.json"
 
 
 def setParserArguments(parser):
@@ -51,7 +50,7 @@ def validate_args(args):
     return args.command == PLUGIN_NAME
 
 
-def compute(args, config):
+def compute(args):
     cmdList = []
 
     if not validate_args(args):

@@ -16,16 +16,12 @@ import matplotlib.colors as mcolors
 import glob
 import math
 
+import sys
+sys.path.append("...")
+import utils.base.app as app
+
 PLUGIN_NAME = "jbase"
 HELP_DESC = "Journal base experiments"
-
-WD_PATH = dirname(dirname(dirname(abspath(__file__))))
-WRAPPER_PATH = dirname(dirname(abspath(__file__)))
-
-
-def init(wd_path):
-    global WD_PATH
-    WD_PATH = wd_path
 
 
 def setParserArguments(parser):
@@ -326,7 +322,7 @@ def jbase_4_1_1(args):
         # Compile Wrapper
         cmd("make")
 
-    _cmd_wrapper = [WRAPPER_PATH + "/" + wrapper]
+    _cmd_wrapper = [app.globalConf.readPath("accessory") + "/" + wrapper]
     _cmd_stress = ["stress-ng", "--times"]
 
     frequencies = ["20", "16", "12"]
@@ -1928,13 +1924,13 @@ def validate_args(args):
 DATA_DIR = "results/"
 
 
-def compute(args, config):
+def compute(args):
     global DATA_DIR
 
     if not validate_args(args):
         return False
 
-    chdir(WD_PATH)
+    chdir(app.globalConf.readPath("wd"))
 
     if args.directory:
         DATA_DIR = args.directory + "/"
@@ -1969,7 +1965,7 @@ def compute(args, config):
                 "4_4_1",
             ]
         for eb in args.exec_bench:
-            chdir(WD_PATH)
+            chdir(app.globalConf.readPath("wd"))
             globals()["jbase_" + eb](args)
 
     return True

@@ -1,3 +1,4 @@
+from email.policy import default
 import os
 import json
 from color_printer import *
@@ -10,12 +11,12 @@ import seaborn as sns
 import matplotlib.colors as mcolors
 from shell_cmd import * 
 
+import sys
+sys.path.append("...")
+import utils.base.app as app
+
 PLUGIN_NAME = "scheduler"
 HELP_DESC = "[cschedr] Access and manipulate collected data"
-
-
-RECODE_PROC_PATH = "/proc/recode"
-RECODE_PROC_CPUS_PATH = RECODE_PROC_PATH + "/cpus"
 
 
 class GroupProfile:
@@ -98,8 +99,8 @@ def setParserArguments(parser):
         metavar="F",
         nargs='?',
         type=str,
-        default=RECODE_PROC_PATH,
-        help="Set dir where to find files (default " + RECODE_PROC_PATH + ")",
+        default="",
+        help="Set dir where to find files",
     )
 
     plug_parser.add_argument(
@@ -860,14 +861,16 @@ def validate_args(args):
     return args.command == PLUGIN_NAME
 
 
-def compute(args, config):
+def compute(args):
     if not validate_args(args):
         return False
 
     print(args)
+    if (args.dir == ""):
+        args.dir = app.globalConf.readPath("recode_proc")
 
     if args.plot is not None and args.plot:
-        action_plot(args.dir, False, True)
+        action_plot(args.dir, False, False)
 
     if args.plot_compress is not None and args.plot_compress:
         action_plot(args.dir, True, True)

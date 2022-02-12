@@ -4,11 +4,13 @@ from shell_cmd import *
 from color_printer import *
 from pathlib import Path
 
+import sys
+sys.path.append("...")
+import utils.base.app as app
+
 
 PLUGIN_NAME = "security"
 HELP_DESC = "Manage the ReCode SECURITY plugin. Can be used only on special Linux Kernels"
-
-RECODE_PROC_PATH = "/proc/recode"
 
 
 def setParserArguments(parser):
@@ -28,7 +30,7 @@ def setParserArguments(parser):
 
 
 def action_mitigations(config, args):
-    path = RECODE_PROC_PATH + "/mitigations"
+    path = app.globalConf.readPath("recode_proc") + "/mitigations"
 
     _file = open(path, "w")
 
@@ -65,7 +67,7 @@ def validate_args(args):
     return True
 
 
-def compute(args, config):
+def compute(args):
     if not validate_args(args):
         return False
 

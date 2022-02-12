@@ -1,8 +1,10 @@
+import sys
+sys.path.append("...")
+import utils.base.app as app
 from color_printer import *
 
 PLUGIN_NAME = "config"
 HELP_DESC = "Configure Recode Module's paramenters"
-globalConfig = None
 
 
 def setParserArguments(parser):
@@ -68,18 +70,7 @@ def setParserArguments(parser):
 
 
 def action_state(action):
-    # path = globalConfig.readPath("recode_proc") + "/security/tuning"
-
-    # if type == "FR":
-    #     _file = open(path, "w")
-    #     _file.write("0")
-    #     _file.close()
-    # elif type == "XL":
-    #     _file = open(path, "w")
-    #     _file.write("1")
-    #     _file.close()
-
-    path = globalConfig.readPath("recode_proc") + "/state"
+    path = app.globalConf.readPath("recode_proc") + "/state"
 
     if action == "off":
         value = "0"
@@ -106,7 +97,7 @@ def action_state(action):
 
 
 def action_tma(action):
-    path = globalConfig.readPath("pmudrv_proc") + "/tma"
+    path = app.globalConf.readPath("pmudrv_proc") + "/tma"
 
     if action == "off":
         value = "0"
@@ -129,7 +120,7 @@ def action_frequency(value):
 
     pmc_mask = (1 << value) - 1
 
-    path = globalConfig.readPath("pmudrv_proc") + "/frequency"
+    path = app.globalConf.readPath("pmudrv_proc") + "/frequency"
 
     _file = open(path, "w")
 
@@ -142,7 +133,7 @@ def get_info(info):
         pr_warn("Cannot read " + info + " info. Returning 0")
         return 0
 
-    path = globalConfig.readPath("pmudrv_proc") + "/" + info
+    path = app.globalConf.readPath("pmudrv_proc") + "/" + info
     _file = open(path, "r")
     value = _file.readlines()
     _file.close()
@@ -158,7 +149,7 @@ def action_info():
 
 def action_mitigations(mitigations):
 
-    path = globalConfig.readPath("recode_proc") + "/mitigations"
+    path = app.globalConf.readPath("recode_proc") + "/mitigations"
 
     _file = open(path, "w")
 
@@ -191,13 +182,9 @@ def validate_args(args):
     return args.command == PLUGIN_NAME
 
 
-def compute(args, config):
-    global globalConfig
-
+def compute(args):
     if not validate_args(args):
         return False
-
-    globalConfig = config
 
     if args.frequency:
         action_frequency(args.frequency)

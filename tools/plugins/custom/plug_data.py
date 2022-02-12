@@ -5,12 +5,12 @@ from color_printer import *
 from proc_reader import ProcCpuReader
 from proc_reader import ProcCpuReaderTMA
 
+import sys
+sys.path.append("...")
+import utils.base.app as app
+
 PLUGIN_NAME = "data"
 HELP_DESC = "Access and manipulate collected data"
-
-
-RECODE_PROC_PATH = "/proc/recode"
-RECODE_PROC_CPUS_PATH = RECODE_PROC_PATH + "/cpus"
 
 DEFAULT_DATA_FILE = "data.json"
 
@@ -58,8 +58,9 @@ def setParserArguments(parser):
 
 
 def __read_proc_cpu(cpuFile):
-    fileName = RECODE_PROC_CPUS_PATH + "/" + cpuFile
+    fileName = app.globalConf.readPath("recode_proc") + "/cpus/" + cpuFile
     file = open(fileName)
+
     pr_info("Reading " + fileName + ":")
     data = ""
 
@@ -80,7 +81,7 @@ def action_read(args):
         return
 
     if (args == READ_ALL_CPUS):
-        for cpuFile in os.listdir(RECODE_PROC_CPUS_PATH):
+        for cpuFile in os.listdir(app.globalConf.readPath("recode_proc") + "/cpus"):
             pr_text(__read_proc_cpu(cpuFile))
     else:
         pr_text(__read_proc_cpu("cpu" + str(args)))
@@ -94,7 +95,7 @@ def action_extract(args):
 
     file = open(args, "w")
 
-    for cpuFile in os.listdir(RECODE_PROC_CPUS_PATH):
+    for cpuFile in os.listdir(app.globalConf.readPath("recode_proc") + "/cpus"):
         pcr = ProcCpuReader(cpuFile)
 
         rawDict = pcr.try_read()
@@ -136,7 +137,7 @@ def action_extract_tma(args):
 
     file = open(args, "w")
 
-    for cpuFile in os.listdir(RECODE_PROC_CPUS_PATH):
+    for cpuFile in os.listdir(app.globalConf.readPath("recode_proc") + "/cpus"):
         pcr = ProcCpuReaderTMA(cpuFile)
 
         rawDict = pcr.try_read()
@@ -196,7 +197,7 @@ def validate_args(args):
     return args.command == PLUGIN_NAME
 
 
-def compute(args, config):
+def compute(args):
     if not validate_args(args):
         return False
 

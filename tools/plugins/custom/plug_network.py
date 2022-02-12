@@ -4,7 +4,9 @@ from shell_cmd import *
 from color_printer import *
 from pathlib import Path
 import json
-
+import sys
+sys.path.append("...")
+import utils.base.app as app
 
 
 PLUGIN_NAME = "network"
@@ -126,7 +128,7 @@ def validate_args(args):
     return True
 
 
-def compute(args, config):
+def compute(args):
     if not validate_args(args):
         return False
 

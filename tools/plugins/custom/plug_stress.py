@@ -6,17 +6,12 @@ from color_printer import *
 import random
 import time
 
+import sys
+sys.path.append("...")
+import utils.base.app as app
+
 PLUGIN_NAME = "stress"
 HELP_DESC = "Syntactic Sugar to execute available qemu instances"
-globalConfig = None
-
-WD_PATH = dirname(dirname(dirname(abspath(__file__))))
-WRAPPER_PATH = dirname(dirname(abspath(__file__)))
-
-
-def init(wd_path):
-    global WD_PATH
-    WD_PATH = wd_path
 
 
 def setParserArguments(parser):
@@ -124,7 +119,7 @@ def action_exec(args):
         # Compile Wrapper
         cmd("make")
 
-    _cmd_wrapper = [globalConfig.readPath("accessory") + "/" + wrapper]
+    _cmd_wrapper = [app.globalConf.readPath("accessory") + "/" + wrapper]
     _cmd_stress = ["stress-ng"]
 
     if args.timeout is not None and args.timeout > 0:
@@ -137,7 +132,7 @@ def action_exec(args):
         args.workers = 1
 
     cmd(
-        ["python", globalConfig.readPath("wd") + "/recode.py", "module", "-c", "tma_scheduler", "-l", "-u"]
+        ["python", app.globalConf.readPath("wd") + "/recode.py", "module", "-c", "tma_scheduler", "-l", "-u"]
     )
 
     processList = []
@@ -152,7 +147,7 @@ def action_exec(args):
             )
         )
 
-    dcmd(["python", globalConfig.readPath("wd") + "/recode.py", "config", "-tma", "on", "-s", "system"])
+    dcmd(["python", app.globalConf.readPath("wd") + "/recode.py", "config", "-tma", "on", "-s", "system"])
 
     for p in processList:
         if p is not None:
@@ -224,15 +219,12 @@ def validate_args(args):
     return args.command == PLUGIN_NAME
 
 
-def compute(args, config):
-    global globalConfig
+def compute(args):
 
     if not validate_args(args):
         return False
 
-    globalConfig = config
-
-    chdir(globalConfig.readPath("WD"))
+    chdir(app.globalConf.readPath("WD"))
 
     action_random_exec(args)
 

@@ -3,6 +3,8 @@ import argparse
 import configparser
 from os.path import dirname, abspath
 
+import utils.base.app as app
+
 import sys
 sys.path.append(dirname(abspath(__file__)) + "/utils/base")
 sys.path.append(dirname(abspath(__file__)) + "/utils/custom")
@@ -88,30 +90,26 @@ def parser_init():
     return parser
 
 
-def compute_plugins(args, config):
+def compute_plugins(args):
     for p in PLUGINS:
-        # print("Plugin " + p.PLUGIN_NAME + ": " + str(p.compute(args, config)))
-        p.compute(args, config)
+        p.compute(args)
 
 
 if __name__ == "__main__":
 
     """ TODO Define a class Plugin """
-    plug_module.init(dirname(dirname(abspath(__file__))))
-    plug_profiler.init(dirname(abspath(__file__)))
-    
     parser = parser_init()
 
     args = parser.parse_args()
 
-    config = RecodeConfig(CONFIG_FILE)
+    app.globalConf = RecodeConfig(CONFIG_FILE)
 
-    fillCommonConfig(config)
+    fillCommonConfig(app.globalConf)
 
-    cmdList = plug_autotest.compute(args, config)
+    cmdList = plug_autotest.compute(args)
 
     if len(cmdList):
         for cmd in cmdList:
-            compute_plugins(parser.parse_args(cmd), config)
+            compute_plugins(parser.parse_args(cmd))
     else:
-        compute_plugins(args, config)
+        compute_plugins(args)
