@@ -250,7 +250,10 @@ compute_tms_l3(const struct pmcs_collection *collection)
 	// 	tma_eval_l2_l2b(collection->pmcs) > 50 ||
 	// 	tma_eval_l2_l3b(collection->pmcs) > 50 ||
 	// 	tma_eval_l2_dramb(collection->pmcs) > 100);
-	return STAY;
+	if (tma_eval_l0_bb(collection->pmcs) > 20 &&
+	    tma_eval_l1_mb(collection->pmcs) > 20)
+		return STAY;
+	return PREV;
 }
 
 struct tma_level {
@@ -373,7 +376,7 @@ int tma_init(void)
 
 	gbl_tma_levels[1].hw_evts = TMA_HW_EVTS_LEVEL_1;
 	gbl_tma_levels[1].hw_cnt = k;
-	gbl_tma_levels[1].next = 2;
+	gbl_tma_levels[1].next = 3;
 	gbl_tma_levels[1].prev = 0;
 	gbl_tma_levels[1].compute = compute_tms_l1;
 
@@ -396,7 +399,7 @@ int tma_init(void)
 	gbl_tma_levels[2].prev = 1;
 	gbl_tma_levels[2].compute = compute_tms_l2;
 
-	TMA_HW_EVTS_LEVEL_3 = kmalloc(sizeof(pmc_evt_code *) * 10, GFP_KERNEL);
+	TMA_HW_EVTS_LEVEL_3 = kmalloc(sizeof(pmc_evt_code *) * 14, GFP_KERNEL);
 
 	if (!TMA_HW_EVTS_LEVEL_3)
 		goto no_tma3;
@@ -420,7 +423,7 @@ int tma_init(void)
 	gbl_tma_levels[3].hw_evts = TMA_HW_EVTS_LEVEL_3;
 	gbl_tma_levels[3].hw_cnt = k;
 	gbl_tma_levels[3].next = 3;
-	gbl_tma_levels[3].prev = 3;
+	gbl_tma_levels[3].prev = 1;
 	gbl_tma_levels[3].compute = compute_tms_l3;
 
 	// register_on_hw_events_setup_callback(update_events_index_local);
@@ -466,11 +469,14 @@ int enable_tma(int tma_mode)
 	if (!tma_mode)
 		return -1;
 
+	/* TODO delete level.prev and fox in init func */
 	if (tma_mode == 1) {
 		pr_warn("*** TMA ENABLED WITH FIXED LEVEL 3 ***\n");
+		gbl_tma_levels[3].prev = 3;
 		level = 3;
 	} else if (tma_mode == 2) {
 		pr_warn("*** TMA ENABLED WITH DYNAMIC LEVEL SWITCH ***\n");
+		gbl_tma_levels[3].prev = 1;
 		level = 0;
 	}
 
