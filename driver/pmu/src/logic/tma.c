@@ -149,7 +149,7 @@ DEFINE_PER_CPU(u8[20], pcpu_pmcs_index_array);
 	 (EVT_IDX(pmcs, l2_hit) + EVT_IDX(pmcs, l1_pend_miss) + 1))
 
 #define tma_eval_l2_dramb(pmcs)                                                \
-	((EVT_IDX(pmcs, ca_stalls_l3_miss) /                                   \
+	((SFACT * (EVT_IDX(pmcs, ca_stalls_l3_miss)) /                                   \
 	  (pmcs[evt_fix_clock_cycles] + 1)) +                                  \
 	 tma_eval_l2_mid_br(pmcs) - tma_eval_l2_l2b(pmcs))
 
@@ -426,7 +426,6 @@ int tma_init(void)
 	gbl_tma_levels[3].prev = 1;
 	gbl_tma_levels[3].compute = compute_tms_l3;
 
-	// register_on_hw_events_setup_callback(update_events_index_local);
 
 	for (k = 0; k < TMA_MAX_LEVEL; ++k) {
 		pr_info("Request event creation (cnt %u)\n",
@@ -448,6 +447,7 @@ int tma_init(void)
 no_events:
 	for (k--; k >= 0; --k)
 		destroy_hw_events(gbl_tma_levels[k].hw_events);
+	k = num_possible_cpus();
 no_tma3:
 	kfree(TMA_HW_EVTS_LEVEL_2);
 no_tma2:
