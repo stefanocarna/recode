@@ -4,7 +4,7 @@
 
 #include <linux/bits.h>
 
-#define SAMPLING_PERIOD (BIT_ULL(24) - 1)
+#define SAMPLING_PERIOD (BIT_ULL(28) - 1)
 enum pmi_vector pmi_vector = NMI;
 
 uint __read_mostly gbl_fixed_pmc_pmi = 2; // PMC with PMI active
