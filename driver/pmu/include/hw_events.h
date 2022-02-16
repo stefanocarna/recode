@@ -53,7 +53,7 @@ enum { __X_COUNTER__ = __COUNTER__ };
 	X_HW_EVENTS(10, ca_stalls_l2_miss, evt_umask_cmask(0xa3, 0x05, 5))     \
 	X_HW_EVENTS(11, ca_stalls_l1d_miss, evt_umask_cmask(0xa3, 0x0c, 12))   \
 	X_HW_EVENTS(12, l2_hit, evt_umask_cmask(0xd1, 0x02, 0))                \
-	X_HW_EVENTS(13, l1_pend_miss, evt_umask_cmask(0x48, 0x02, 0))          \
+	X_HW_EVENTS(13, l1_pend_miss, evt_umask_cmask(0x48, 0x02, 1))          \
 	/* New evets for security */                                           \
 	X_HW_EVENTS(14, l2_all_data, evt_umask_cmask(0x24, 0xe1, 0))           \
 	X_HW_EVENTS(15, l2_data_misses, evt_umask_cmask(0x24, 0x21, 0))        \
