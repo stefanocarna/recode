@@ -9,7 +9,7 @@
 #include "pmu_low.h"
 #include "logic/tma.h"
 
-DEFINE_PER_CPU(u8[20], pcpu_pmcs_index_array);
+DEFINE_PER_CPU(u8[NR_HW_EVENTS], pcpu_pmcs_index_array);
 
 /* TMA masks */
 
@@ -72,7 +72,7 @@ DEFINE_PER_CPU(u8[20], pcpu_pmcs_index_array);
 
 /* TMA formulas */
 
-#define SUB_SAFE(a, b) (a > b ? a - b : 0)
+#define SUB_SAFE(a, b) ((a) > (b) ? (a) - (b) : 0)
 
 /* Scale factor */
 #define SFACT 100
@@ -100,6 +100,14 @@ DEFINE_PER_CPU(u8[20], pcpu_pmcs_index_array);
 #define tma_eval_l0_bb(pmcs)                                                   \
 	SUB_SAFE(SFACT, (tma_eval_l0_fb(pmcs) + tma_eval_l0_bs(pmcs) +         \
 			 tma_eval_l0_re(pmcs)))
+
+// #define tma_eval_l0_bb(pmcs)
+// 	(SUB_SAFE(SFACT,
+// 		  tma_eval_l0_fb(pmcs) +
+// 			  (SFACT * (EVT_IDX(pmcs, ui_any) +
+// 				    (TMA_PIPELINE_WIDTH *
+// 				     EVT_IDX(pmcs, im_recovery_cycles)))) /
+// 				  (tma_eval_l0_mid_total_slots(pmcs) + 1)))
 
 #define tma_eval_l1_mid_fuet(pmcs)                                             \
 	(EVT_IDX(pmcs, ea_2_ports_util) *                                      \
@@ -149,7 +157,7 @@ DEFINE_PER_CPU(u8[20], pcpu_pmcs_index_array);
 	 (EVT_IDX(pmcs, l2_hit) + EVT_IDX(pmcs, l1_pend_miss) + 1))
 
 #define tma_eval_l2_dramb(pmcs)                                                \
-	((SFACT * (EVT_IDX(pmcs, ca_stalls_l3_miss)) /                                   \
+	((SFACT * (EVT_IDX(pmcs, ca_stalls_l3_miss)) /                         \
 	  (pmcs[evt_fix_clock_cycles] + 1)) +                                  \
 	 tma_eval_l2_mid_br(pmcs) - tma_eval_l2_l2b(pmcs))
 
@@ -425,7 +433,6 @@ int tma_init(void)
 	gbl_tma_levels[3].next = 3;
 	gbl_tma_levels[3].prev = 1;
 	gbl_tma_levels[3].compute = compute_tms_l3;
-
 
 	for (k = 0; k < TMA_MAX_LEVEL; ++k) {
 		pr_info("Request event creation (cnt %u)\n",

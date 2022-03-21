@@ -1,12 +1,4 @@
-import os
-import requests
-from shell_cmd import *
-from color_printer import *
-from pathlib import Path
-
-import sys
-sys.path.append("...")
-import utils.base.app as app
+from utils.base import app
 
 
 PLUGIN_NAME = "security"

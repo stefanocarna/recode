@@ -75,6 +75,8 @@ static int pmi_handler(unsigned int cmd, struct pt_regs *regs)
 	 * request.
 	 */
 
+	this_cpu_inc(pcpu_pmus_metadata.pmi_counter);
+
 	if (pmc_access_on_pmi_local()) {
 		if (tma_enabled)
 			tma_on_pmi_callback_local();

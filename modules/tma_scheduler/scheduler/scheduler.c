@@ -178,7 +178,9 @@ int schedule_action(void)
 	case EVALUATION:
 		pr_info("EVALUATION\n");
 		if (!evaluate_next_group())
-			return prepare_consolidation();
+			break;
+			/* *** TODO ENABLE!!!  */
+			// return prepare_consolidation();
 		return STD_TICK;
 	case CONSOLIDATION:
 		int time;

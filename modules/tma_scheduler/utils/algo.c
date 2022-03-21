@@ -138,11 +138,10 @@ w3d_array_t partition_k_cap(const weight_t *c, array_count_t s, array_count_t k,
 
 	if (s == 1) {
 		w_array_t r1;
+		w2d_array_t r2;
 
 		array_init(r1);
 		array_push(r1, *c);
-
-		w2d_array_t r2;
 
 		array_init(r2);
 		array_push(r2, r1);
@@ -213,7 +212,7 @@ size_t compute_k_partitions_min_max_cap(struct csched **av_cs_p,
 
 	/* No partition available */
 	if (k < 2) {
-	no_part:
+no_part:
 		av_cs = kmalloc(sizeof(*av_cs), GFP_KERNEL);
 		if (!av_cs)
 			return 0;
@@ -268,12 +267,17 @@ less_part:
 		w2d_array_t res = array_get_at(parts, i);
 		valid = true;
 
+		pr_info("CHECK: %u\n", i);
+		
 		array_for_each(j, res) {
+			pr_info("CHECK part: %u\n", w_array_sum(array_get_at(res, j)));
 			if (w_array_sum(array_get_at(res, j)) < min_cap) {
 				valid = false;
 				break;
 			}
 		}
+
+		pr_info("-- %s\n", valid ? "GOOD" : "BAD");
 
 		if (valid) {
 			w2d_array_t ins = copy_2d_array(res);

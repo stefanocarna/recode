@@ -25,6 +25,8 @@ void pop_hook_proc_fork(ARGS_PROC_FORK)
 
 void pop_hook_proc_exit(ARGS_PROC_EXIT)
 {
+	// We borrow the *data parameter
+	// void *data;
 	struct group_entity *group;
 	struct tma_profile *profile;
 
@@ -39,10 +41,12 @@ void pop_hook_proc_exit(ARGS_PROC_EXIT)
 	// aggregate_tma_profile(profile, (struct tma_profile *)group->data);
 	pr_debug("would aggregate p %u to g %u\n", p->pid, group->id);
 
-	if (!group->nr_processes) {
-		// print_tma_metrics(group->id, (struct tma_profile *)group->data);
-		destroy_group(group->id);
-	}
+	// TODO Destroy group only manually
+	// if (!group->nr_processes) {
+	// 	// print_tma_metrics(group->id, (struct tma_profile *)group->data);
+	// 	data = destroy_group(group->id);
+	// 	kfree(data);
+	// }
 
 	pr_debug("Exiting %u\n", p->pid);
 }

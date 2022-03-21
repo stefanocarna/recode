@@ -64,55 +64,36 @@ void untrack_thread(struct task_struct *task);
 /* Groups */
 extern uint nr_groups;
 
-struct group_entity {
-	char name[TASK_COMM_LEN];
-	uint id;
-	void *data;
-	spinlock_t lock;
+struct process_stats {
 
-	/* Atomicity is not required */
-	uint nr_processes;
-	struct list_head p_list;
-	bool profiling;
+	bool alive;
 
-	/* TODO Remove */
-	u64 utime;
-	u64 stime;
-	int nr_active_tasks;
+	// CPU time
+	unsigned long cpu_time;
+
+	// Struct to collect pmcs data
+	int nr_samples;
+	struct stats_sample *samples_head;
+	struct stats_sample *samples_tail;
 };
 
-struct proc_entity {
-	pid_t pid;
-	void *data;
-	struct task_struct *task;
-	struct group_entity *group;
-	/* Stats data */
-	u64 utime_snap;
-	u64 stime_snap;
+
+struct group_stats {
+
+	// CPU time - Sum of the processes' time
+	unsigned long cpu_time;
+
+	// Power Comnsumption
+	unsigned long power;
+
+	// State - True if at least one process is alive
+	bool alive;
+
+	// Thread stats
+	int nr_processes;
+	struct process_stats process_stats_list;
 };
 
-int recode_groups_init(void);
-void recode_groups_fini(void);
-
-int register_process_to_group(pid_t pid, struct group_entity *group,
-			      void *data);
-
-void *unregister_process_from_group(pid_t pid, struct group_entity *group);
-
-struct group_entity *create_group(char *gname, uint id, void *payload);
-
-struct group_entity *get_group_by_proc(pid_t pid);
-struct group_entity *get_group_by_id(uint id);
-struct group_entity *get_next_group_by_id(uint id);
-
-void *destroy_group(uint id);
-
-void signal_to_group_by_id(uint signal, uint id);
-void signal_to_group(uint signal, struct group_entity *group);
-void signal_to_all_groups(uint signal);
-void schedule_all_groups(void);
-void start_group_stats(struct group_entity *group);
-void stop_group_stats(struct group_entity *group);
 
 // void setup_hw_events_from_proc(pmc_evt_code *hw_events_codes, unsigned cnt);
 

@@ -1,7 +1,6 @@
 import os
 import sys
-sys.path.append("...")
-import utils.base.app as app
+from utils.base import app
 
 PLUGIN_NAME = "autotest"
 HELP_DESC = "Configure Recode to execute test with minimum effort"

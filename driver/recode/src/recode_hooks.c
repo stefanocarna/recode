@@ -5,6 +5,7 @@
 #include "pmu.h"
 #include "pmu_core.h"
 #include "recode.h"
+#include "recode_groups.h"
 
 __weak void pop_hook_sched_in(ARGS_SCHED_IN)
 {
@@ -18,7 +19,9 @@ __weak void pop_hook_sched_in(ARGS_SCHED_IN)
 		break;
 	case PROFILE:
 		/* Toggle PMI */
-		if (!query_tracked(next))
+		// TODO Adapt query tracker to group
+		// if (!query_tracked(next))
+		if (!get_group_by_proc(next->pid))
 			disable_pmcs_local(false);
 		else
 			enable_pmcs_local(false);
@@ -27,6 +30,7 @@ __weak void pop_hook_sched_in(ARGS_SCHED_IN)
 		if (rf_hook_sched_in_custom_state(prev, next))
 			return;
 	}
+
 
 	rf_after_hook_sched_in(prev, next);
 }

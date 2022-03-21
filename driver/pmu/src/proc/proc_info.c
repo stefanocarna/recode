@@ -1,12 +1,21 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
+#include <linux/percpu.h>
 
 #include "pmu_low.h"
 #include "proc.h"
 
+
 static int info_seq_show(struct seq_file *m, void *v)
 {
+	int k;
+
 	seq_printf(m, "THRS %llx\n", gbl_reset_period);
-	seq_printf(m, "PMIs %u\n", this_cpu_read(pcpu_pmus_metadata.pmi_counter));
+
+	seq_puts(m, "PMIs\n");
+
+	for_each_possible_cpu(k)
+		seq_printf(m, "%u] %u\n", k,
+			   per_cpu(pcpu_pmus_metadata.pmi_counter, k));
 
 	return 0;
 }
@@ -17,8 +26,9 @@ static int info_open(struct inode *inode, struct file *filp)
 }
 
 static ssize_t info_write(struct file *file, const char __user *buffer,
-			   size_t count, loff_t *ppos)
+			  size_t count, loff_t *ppos)
 {
+	int k;
 	int err;
 	uint cmd;
 
@@ -26,8 +36,10 @@ static ssize_t info_write(struct file *file, const char __user *buffer,
 	if (err)
 		return -ENOMEM;
 
-	if (cmd == 0)
-		this_cpu_write(pcpu_pmus_metadata.pmi_counter, 0);
+	if (cmd == 0) {
+		for_each_possible_cpu(k)
+			per_cpu(pcpu_pmus_metadata.pmi_counter, k) = 0;
+	}
 
 	return count;
 }
@@ -56,13 +68,3 @@ int pmu_register_proc_info(void)
 
 	return !dir;
 }
-
-
-
-
-
-
-
-
-
-

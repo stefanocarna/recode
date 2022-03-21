@@ -68,6 +68,7 @@ EXPORT_SYMBOL(pmudrv_set_state);
 
 static void __enable_pmcs_local(void *dummy)
 {
+	u64 a;
 	uint cpu = smp_processor_id();
 
 	if (!pmu_enabled || !cpumask_test_cpu(cpu, &pmu_enabled_cpumask)) {
@@ -80,6 +81,9 @@ static void __enable_pmcs_local(void *dummy)
 #ifndef CONFIG_RUNNING_ON_VM
 	wrmsrl(MSR_CORE_PERF_GLOBAL_CTRL,
 	       this_cpu_read(pcpu_pmus_metadata.perf_global_ctrl));
+	       rdmsrl(MSR_CORE_PERF_GLOBAL_CTRL, a);
+	pr_info("-- %llx\n", this_cpu_read(pcpu_pmus_metadata.perf_global_ctrl));
+	pr_info("%llx\n", a);
 #endif
 }
 

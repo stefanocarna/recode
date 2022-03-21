@@ -1,13 +1,12 @@
 import os
 import json
 import pandas as pd
-from color_printer import *
-from proc_reader import ProcCpuReader
-from proc_reader import ProcCpuReaderTMA
+from utils.base import color_printer as ep
+from utils.base.proc_reader import ProcCpuReader
+from utils.base.proc_reader import ProcCpuReaderTMA
 
 import sys
-sys.path.append("...")
-import utils.base.app as app
+from utils.base import app
 
 PLUGIN_NAME = "data"
 HELP_DESC = "Access and manipulate collected data"
@@ -61,7 +60,7 @@ def __read_proc_cpu(cpuFile):
     fileName = app.globalConf.readPath("recode_proc") + "/cpus/" + cpuFile
     file = open(fileName)
 
-    pr_info("Reading " + fileName + ":")
+    ep.pr_info("Reading " + fileName + ":")
     data = ""
 
     lines = file.readlines()
@@ -82,9 +81,9 @@ def action_read(args):
 
     if (args == READ_ALL_CPUS):
         for cpuFile in os.listdir(app.globalConf.readPath("recode_proc") + "/cpus"):
-            pr_text(__read_proc_cpu(cpuFile))
+            ep.pr_text(__read_proc_cpu(cpuFile))
     else:
-        pr_text(__read_proc_cpu("cpu" + str(args)))
+        ep.pr_text(__read_proc_cpu("cpu" + str(args)))
 
 
 def action_extract(args):

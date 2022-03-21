@@ -1,6 +1,6 @@
 #include "device/proc.h"
 
-/* Proc and Fops related to PMUDRV state */
+/* Proc and Fops related to Recode state */
 
 int state_seq_show(struct seq_file *m, void *v)
 {

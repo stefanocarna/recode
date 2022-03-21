@@ -1,7 +1,6 @@
-import sys
-sys.path.append("...")
-import utils.base.app as app
-from color_printer import *
+from utils.base import color_printer as ep
+from utils.base import app
+
 
 PLUGIN_NAME = "config"
 HELP_DESC = "Configure Recode Module's paramenters"
@@ -35,7 +34,16 @@ def setParserArguments(parser):
         "--tma",
         type=str,
         required=False,
-        choices=["on", "off"],
+        choices=["fix", "dyn", "off"],
+        help="Enable or disable TMA",
+    )
+
+    plug_parser.add_argument(
+        "-sc",
+        "--scheduler",
+        type=str,
+        required=False,
+        choices=["direct", "dynamic", "collect", "off"],
         help="Enable or disable TMA",
     )
 
@@ -88,7 +96,7 @@ def action_state(action):
         action_state("off")
         value = "2"
     else:
-        pr_warn("Something wrong: --state " + action + " illegal")
+        ep.pr_warn("Something wrong: --state " + action + " illegal")
         return
 
     _file = open(path, "w")
@@ -101,10 +109,32 @@ def action_tma(action):
 
     if action == "off":
         value = "0"
-    elif action == "on":
+    elif action == "fix":
         value = "1"
+    elif action == "dyn":
+        value = "2"
     else:
-        pr_warn("Something wrong: --tma " + action + " illegal")
+        ep.pr_warn("Something wrong: --tma " + action + " illegal")
+        return
+
+    _file = open(path, "w")
+    _file.write(value)
+    _file.close()
+
+
+def action_scheduler(action):
+    path = app.globalConf.readPath("recode_proc") + "/scheduler"
+
+    if action == "off":
+        value = "0"
+    elif action == "collect":
+        value = "1"
+    elif action == "direct":
+        value = "2"
+    elif action == "dynamic":
+        value = "3"
+    else:
+        ep.pr_warn("Something wrong: --scheduler " + action + " illegal")
         return
 
     _file = open(path, "w")
@@ -115,7 +145,7 @@ def action_tma(action):
 def action_frequency(value):
     value = int(value)
     if value < 1 and value > 48:
-        pr_warn("frequency must be expressed as (1 << P) + 1")
+        ep.pr_warn("frequency must be expressed as (1 << P) + 1")
         return
 
     pmc_mask = (1 << value) - 1
@@ -130,7 +160,7 @@ def action_frequency(value):
 
 def get_info(info):
     if info not in ["frequency", "events", "thresholds"]:
-        pr_warn("Cannot read " + info + " info. Returning 0")
+        ep.pr_warn("Cannot read " + info + " info. Returning 0")
         return 0
 
     path = app.globalConf.readPath("pmudrv_proc") + "/" + info
@@ -141,10 +171,10 @@ def get_info(info):
 
 
 def action_info():
-    pr_info("Recode info:")
-    pr_text(" - frequency:\t" + hex(int("0x" + get_info("frequency"), 0)))
-    pr_text(" - events:\t" + get_info("events"))
-    pr_text(" - thresholds:\t" + get_info("thresholds"))
+    ep.pr_info("Recode info:")
+    ep.pr_text(" - frequency:\t" + hex(int("0x" + get_info("frequency"), 0)))
+    ep.pr_text(" - events:\t" + get_info("events"))
+    ep.pr_text(" - thresholds:\t" + get_info("thresholds"))
 
 
 def action_mitigations(mitigations):
@@ -191,6 +221,9 @@ def compute(args):
 
     if args.tma:
         action_tma(args.tma)
+
+    if args.scheduler:
+        action_scheduler(args.scheduler)
 
     if args.state:
         action_state(args.state)

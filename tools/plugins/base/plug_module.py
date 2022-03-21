@@ -1,11 +1,8 @@
 import os
-from os.path import dirname, abspath
-from shell_cmd import *
-from color_printer import *
-from pathlib import Path
-import sys
-sys.path.append("...")
-import utils.base.app as app
+from utils.base import cmd
+from utils.base import color_printer as ep
+from utils.base import app
+
 
 PLUGIN_NAME = "module"
 HELP_DESC = "Basic interface to manage the Recode Module"
@@ -42,9 +39,7 @@ def setParserArguments(parser):
     plug_parser.add_argument(
         "-c",
         "--compile",
-        metavar="P",
-        nargs='?',
-        type=str,
+        action="store_true",
         required=False,
         help="Compile the module",
     )
@@ -52,63 +47,73 @@ def setParserArguments(parser):
     plug_parser.add_argument(
         "-cc",
         "--clean-compile",
-        metavar="P",
-        nargs='?',
-        type=str,
+        action="store_true",
         required=False,
         help="Clean and compile the module",
+    )
+
+    plug_parser.add_argument(
+        "-p",
+        "--plugin",
+        type=str,
+        required=False,
+        help="Compile the module",
     )
 
 
 def __perform_action(action):
 
-    if (action is None or action == ""):
-        pr_warn("Something wrong: --module illegal")
+    if action is None or action == "":
+        ep.pr_warn("Something wrong: --module illegal")
         return
 
-    pr_info(action)
-    out, err, ret = cmd(action, sh=True)
+    ep.pr_info(action)
+    out, err, ret = cmd.cmd(action, sh=True)
 
     if ret != 0:
-        pr_err("Module action failed with retCode " + str(ret) + ":")
+        ep.pr_err("Module action failed with retCode " + str(ret) + ":")
         for line in err.strip().split("\n"):
-            pr_warn(" * " + line)
+            ep.pr_warn(" * " + line)
     else:
-        pr_succ("Done")
+        ep.pr_succ("Done")
 
     return ret
 
 
 def action_load():
     action = "make load"
-    pr_info("Mounting module...")
+    ep.pr_info("Mounting module...")
     return __perform_action(action)
 
 
 def action_unload():
     action = "make unload"
-    pr_info("Unmounting module...")
+    ep.pr_info("Unmounting module...")
     return __perform_action(action)
 
 
 def action_load_debug():
     action = "make debug"
-    pr_info("Mounting module (Debug ON)...")
+    ep.pr_info("Mounting module (Debug ON)...")
     return __perform_action(action)
 
 
-def action_compile(args):
+def action_compile(plugin=None):
     nr_cpu = str(os.cpu_count())
-    action = "make " + "POP_MODULE=" + args + " -j" + nr_cpu
-    pr_info("Compiling module...")
+    if plugin != None:
+        action = "make " + "POP_MODULE=" + plugin + " -j" + nr_cpu
+    else:
+        action = "make -j" + nr_cpu
+
+    ep.pr_info("Compiling module...")
     return __perform_action(action)
 
 
-def action_clean_compile(args):
+def action_clean_compile(plugin):
     action = "make clean"
-    pr_info("Clean module...")
+    ep.pr_info("Clean module...")
     __perform_action(action)
-    return action_compile(args)
+    return action_compile(plugin)
 
 
 def validate_args(args):
@@ -116,7 +121,7 @@ def validate_args(args):
         return False
 
     if args.load and args.load_debug:
-        pr_warn("Cannot execute load twice...")
+        ep.pr_warn("Cannot execute load twice...")
         return False
 
     return True
@@ -128,19 +133,21 @@ def compute(args):
 
     os.chdir(app.globalConf.readPath("wd"))
 
-    if (args.unload):
+    ep.pr_info(app.globalConf.readPath("wd"))
+
+    if args.unload:
         action_unload()
 
-    if (args.clean_compile):
-        action_clean_compile(args.clean_compile)
+    if args.clean_compile:
+        action_clean_compile(args.plugin)
 
-    if (args.compile):
-        action_compile(args.compile)
+    if args.compile:
+        action_compile(args.plugin)
 
-    if (args.load):
+    if args.load:
         action_load()
 
-    if (args.load_debug):
+    if args.load_debug:
         action_load_debug()
 
     return True

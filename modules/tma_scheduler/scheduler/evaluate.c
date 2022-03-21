@@ -26,6 +26,12 @@ void stop_evaluation(void)
 
 	group_fp = &sched_conf.group_fps[sched_conf.cur_group];
 
+	/* Compute Group Stats */
+	stop_group_stats(group_fp->group);
+
+	/* Compute Power stats */
+	RR_STOP();
+
 	/* Compute System CPU time */
 	read_cpu_stats(&used_time, &total_time);
 	group_fp->cpu_used_time = used_time - group_fp->cpu_used_time;
@@ -34,11 +40,7 @@ void stop_evaluation(void)
 	pr_info("- CPU USAGE:  %llu / %llu\n", group_fp->cpu_used_time,
 		group_fp->cpu_total_time);
 
-	/* Compute Power stats */
-	RR_STOP();
-
-	/* Compute Group Stats */
-	stop_group_stats(group_fp->group);
+	// pr_info("- Retire:  %llu\n", );
 
 	group_fp->cpu_occupancy =
 		(100 * (group_fp->group->utime + group_fp->group->stime)) /
@@ -46,7 +48,7 @@ void stop_evaluation(void)
 
 	signal_to_group(SIGSTOP, group_fp->group);
 
-	pr_info("<< G %p ** %u\n", group_fp->group, group_fp->group->id);
+	// pr_info("<< G %p ** %u\n", group_fp->group, group_fp->group->id);
 	pr_info("<< G %s ** STOP\n", group_fp->group->name);
 }
 

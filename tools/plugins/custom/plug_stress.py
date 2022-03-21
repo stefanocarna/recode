@@ -1,14 +1,8 @@
-from os import chdir, cpu_count, strerror, system
-from os.path import isfile, dirname, abspath
-import subprocess
-from shell_cmd import *
-from color_printer import *
 import random
-import time
-
-import sys
-sys.path.append("...")
-import utils.base.app as app
+from os import chdir, cpu_count
+from os.path import isfile
+from utils.base import cmd
+from utils.base import app
 
 PLUGIN_NAME = "stress"
 HELP_DESC = "Syntactic Sugar to execute available qemu instances"
@@ -90,7 +84,7 @@ usedStressors = [
 def getAvailableStressors():
     return usedStressors
 
-    out, err, ret = cmd(["stress-ng", "--stressor"])
+    out, err, ret = cmd.cmd(["stress-ng", "--stressor"])
 
     if ret != 0:
         pr_err("Execution failed with errcode " + str(ret) + ":")
@@ -117,7 +111,7 @@ def action_exec(args):
     wrapper = "wrapper_fax"
     if not isfile(wrapper):
         # Compile Wrapper
-        cmd("make")
+        cmd.cmd("make")
 
     _cmd_wrapper = [app.globalConf.readPath("accessory") + "/" + wrapper]
     _cmd_stress = ["stress-ng"]
@@ -131,7 +125,7 @@ def action_exec(args):
     if args.workers < 1:
         args.workers = 1
 
-    cmd(
+    cmd.cmd(
         ["python", app.globalConf.readPath("tools") + "/recode.py", "module", "-c", "tma_scheduler", "-l", "-u"]
     )
 
@@ -139,7 +133,7 @@ def action_exec(args):
     for sw in args.stressors:
         stressName, stressWorkers = sw.split(":")
         processList.append(
-            dcmd(
+            dcmd.cmd(
                 _cmd_wrapper
                 + [stressName]
                 + _cmd_stress
@@ -147,14 +141,14 @@ def action_exec(args):
             )
         )
 
-    dcmd(["python", app.globalConf.readPath("tools") + "/recode.py", "config", "-tma", "on", "-s", "system"])
+    dcmd.cmd(["python", app.globalConf.readPath("tools") + "/recode.py", "config", "-tma", "on", "-s", "system"])
 
     for p in processList:
         if p is not None:
             p.wait()
 
-    # cmd(["python", "tools/recode.py", "scheduler", "-pc"])
-    # dcmd(["python", "tools/recode.py", "config", "-s", "off"])
+    # cmd.cmd(["python", "tools/recode.py", "scheduler", "-pc"])
+    # dcmd.cmd(["python", "tools/recode.py", "config", "-s", "off"])
 
 
 def action_random_exec(args):

@@ -10,6 +10,7 @@
 #include <linux/sched/signal.h>
 
 #include "recode.h"
+#include "recode_groups.h"
 
 uint nr_groups;
 
@@ -19,24 +20,6 @@ static DECLARE_HASHTABLE(group_map, 8);
 /* Lock the list access */
 static spinlock_t p_lock;
 static spinlock_t g_lock;
-
-struct group_node {
-	uint key;
-	struct group_entity *group;
-	struct hlist_node node;
-};
-
-struct proc_node {
-	uint key;
-	struct proc_entity *proc;
-	struct hlist_node node;
-};
-
-struct proc_list {
-	uint key;
-	struct proc_entity *proc;
-	struct list_head list;
-};
 
 int recode_groups_init(void)
 {
@@ -342,7 +325,20 @@ void *destroy_group(uint id)
 	return data;
 }
 
-struct group_entity *get_group_by_proc(pid_t pid)
+void set_group_active(struct group_entity *gentity, bool active)
+{
+	if (!gentity)
+		return;
+
+	if (gentity->active == active)
+		return;
+
+	gentity->active = active;
+
+	signal_to_group(active ? SIGCONT : SIGSTOP, gentity);
+}
+
+struct proc_entity *get_proc_by_pid(pid_t pid)
 {
 	unsigned long flags;
 	struct proc_node *cur;
@@ -351,11 +347,20 @@ struct group_entity *get_group_by_proc(pid_t pid)
 	hash_for_each_possible(proc_map, cur, node, pid) {
 		if (cur->key == pid) {
 			spin_unlock_irqrestore(&p_lock, flags);
-			return cur->proc->group;
+			return cur->proc;
 		}
 	}
 	spin_unlock_irqrestore(&p_lock, flags);
 	return NULL;
+}
+
+struct group_entity *get_group_by_proc(pid_t pid)
+{
+	struct proc_entity *pentity;
+
+	pentity = get_proc_by_pid(pid);
+
+	return pentity ? pentity->group : NULL;
 }
 
 struct group_entity *get_group_by_id(uint id)

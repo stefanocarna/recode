@@ -1,24 +1,14 @@
 from cmath import inf
-from os import chdir, cpu_count, read, strerror, system, getcwd
-from os.path import isfile, dirname, abspath
-import subprocess
-
-from pandas.core import base
-from shell_cmd import *
-from color_printer import *
-import random
+from os import chdir, cpu_count
+from os.path import isfile
 import time
-import sys
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-import matplotlib.colors as mcolors
 import glob
 import math
-
-import sys
-sys.path.append("...")
-import utils.base.app as app
+from utils.base import cmd
+from utils.base import app
 
 PLUGIN_NAME = "jbase"
 HELP_DESC = "Journal base experiments"
@@ -124,7 +114,7 @@ def getTimeFromStressOutput(output, type):
 
 
 def getSamplesFromProc():
-    output = cmd("cat /proc/recode/info", type=Pipe.OUT, sh=True)
+    output = cmd.cmd("cat /proc/recode/info", type=Pipe.OUT, sh=True)
     print(output)
     for line in output.split("\n"):
         if "TRACKED PMIs" in line:
@@ -134,7 +124,7 @@ def getSamplesFromProc():
 
 
 def getPMIsFromProc():
-    output = cmd("cat /proc/pmudrv/info", type=Pipe.OUT, sh=True)
+    output = cmd.cmd("cat /proc/pmudrv/info", type=Pipe.OUT, sh=True)
     for line in output.split("\n"):
         if "PMIs" in line:
             return int(line.split("PMIs")[1])
@@ -154,7 +144,7 @@ def calibrateWk(wk, nr, cOps, avg_time=AVG_TIME, goal_time=GOAL_TIME):
         wkExec = _cmd_stress + (
             "--" + wk + " " + str(nr) + " --" + wk + "-ops " + str(cOps)
         ).split(" ")
-        out, err, ret = cmd(wkExec)
+        out, err, ret = cmd.cmd(wkExec)
 
         runtimeT = 0
         for line in err.split("\n"):
@@ -222,7 +212,7 @@ def jbase_4_0_0(args):
                 "--" + wk + " 1 --" + wk + "-ops " + str(workloads[wk])
             ).split(" ")
 
-            out, err, ret = cmd(wkExec)
+            out, err, ret = cmd.cmd(wkExec)
             print(" ".join(wkExec))
             print("ERR:", err)
 
@@ -276,7 +266,7 @@ def jbase_4_0_0(args):
                 + str(workloadsSmt[wk])
             ).split(" ")
 
-            out, err, ret = cmd(wkExec)
+            out, err, ret = cmd.cmd(wkExec)
             print(" ".join(wkExec))
             print("ERR:", err)
 
@@ -320,7 +310,7 @@ def jbase_4_1_1(args):
     wrapper = "wrapper"
     if not isfile(wrapper):
         # Compile Wrapper
-        cmd("make")
+        cmd.cmd("make")
 
     _cmd_wrapper = [app.globalConf.readPath("accessory") + "/" + wrapper]
     _cmd_stress = ["stress-ng", "--times"]
@@ -339,15 +329,15 @@ def jbase_4_1_1(args):
 
         for vec in vectors:
 
-            cmd("python tools/recode.py module -m journal_base -c -l -u".split(" "))
+            cmd.cmd("python tools/recode.py module -m journal_base -c -l -u".split(" "))
 
-            cmd("echo " + vectors[vec] + " > /proc/pmudrv/vector", sh=True)
+            cmd.cmd("echo " + vectors[vec] + " > /proc/pmudrv/vector", sh=True)
 
-            cmd(("python tools/recode.py config -f " + freq).split(" "))
+            cmd.cmd(("python tools/recode.py config -f " + freq).split(" "))
 
             time.sleep(1)
 
-            cmd("python tools/recode.py config -s system".split(" "))
+            cmd.cmd("python tools/recode.py config -s system".split(" "))
 
             fOut.write("VECTOR " + vec + "\n\n")
             time.sleep(1)
@@ -362,8 +352,8 @@ def jbase_4_1_1(args):
                 for run in range(nRuns):
                     # Reset stats
                     if vec != "OFF":
-                        cmd("echo 0 > /proc/recode/info", sh=True)
-                        cmd("echo 0 > /proc/pmudrv/info", sh=True)
+                        cmd.cmd("echo 0 > /proc/recode/info", sh=True)
+                        cmd.cmd("echo 0 > /proc/pmudrv/info", sh=True)
 
                         wkExec = (
                             _cmd_wrapper
@@ -379,7 +369,7 @@ def jbase_4_1_1(args):
                             "--" + wk + " 1 --" + wk + "-ops " + str(workloads[wk])
                         ).split(" ")
 
-                    out, err, ret = cmd(wkExec)
+                    out, err, ret = cmd.cmd(wkExec)
 
                     if vec != "OFF":
                         cpuPmis = getPMIsFromProc()
@@ -448,7 +438,7 @@ def jbase_4_1_1(args):
 
                 fOut.flush()
 
-            cmd("python tools/recode.py config -s off".split(" "))
+            cmd.cmd("python tools/recode.py config -s off".split(" "))
 
         fOut.close()
 
@@ -498,9 +488,9 @@ def jbase_4_2_1(args):
         fOut.write(" ".join(_cmd_stress) + "\n")
 
         for plug in plugins:
-            cmd("make PLUGIN=" + plug, sh=True)
-            cmd("make unload", sh=True)
-            cmd("make load", sh=True)
+            cmd.cmd("make PLUGIN=" + plug, sh=True)
+            cmd.cmd("make unload", sh=True)
+            cmd.cmd("make load", sh=True)
 
             fOut.write("PLUG " + plug + "\n")
 
@@ -512,7 +502,7 @@ def jbase_4_2_1(args):
 
                 wkExec = _cmd_stress
                 print("Executing:", " ".join(wkExec))
-                out, err, ret = cmd(wkExec)
+                out, err, ret = cmd.cmd(wkExec)
 
                 print(err)
 
@@ -560,17 +550,17 @@ def exec_cmd(nRuns, fOut, cmdStress, tmpFile=False, perf=False):
         print("EXEC:", " ".join(wkExec))
 
         if tmpFile:
-            p = dcmd(" ".join(wkExec + ["2>", "tmpFile.txt"]), sh=True)
+            p = cmd.dcmd(" ".join(wkExec + ["2>", "tmpFile.txt"]), sh=True)
             p.wait()
 
             tmpF = open("tmpFile.txt", "r")
             err = "".join(tmpF.readlines())
             tmpF.close()
-            cmd("rm tmpFile.txt", sh=True)
+            cmd.cmd("rm tmpFile.txt", sh=True)
             out = ""
             ret = 0
         else:
-            out, err, ret = cmd(wkExec)
+            out, err, ret = cmd.cmd(wkExec)
 
         if ret:
             print("Error while exec: ", " ".join(wkExec))
@@ -636,17 +626,17 @@ def exec_sys_cmd(nRuns, fOut, cmdStress, tmpFile=False, perf=False):
         print("EXEC:", " ".join(wkExec))
 
         if tmpFile:
-            p = dcmd(" ".join(wkExec + ["2>", "tmpFile.txt"]), sh=True)
+            p = cmd.dcmd(" ".join(wkExec + ["2>", "tmpFile.txt"]), sh=True)
             p.wait()
 
             tmpF = open("tmpFile.txt", "r")
             err = "".join(tmpF.readlines())
             tmpF.close()
-            cmd("rm tmpFile.txt", sh=True)
+            cmd.cmd("rm tmpFile.txt", sh=True)
             out = ""
             ret = 0
         else:
-            out, err, ret = cmd(wkExec)
+            out, err, ret = cmd.cmd(wkExec)
 
         if ret:
             print("Error while exec: ", " ".join(wkExec))
@@ -720,7 +710,7 @@ def exec_time_cmd(nRuns, fOut, cmdExec):
     for run in range(nRuns):
         wkExec = ["time"] + cmdExec
         print(wkExec)
-        out, err, ret = cmd(wkExec)
+        out, err, ret = cmd.cmd(wkExec)
 
         runtimeU = getTimeFromOutput(err, "user")
         runtimeS = getTimeFromOutput(err, "system")
@@ -898,7 +888,7 @@ def jbase_4_2_2(args):
         return
 
     chdir("/home/userx/git/SHook")
-    cmd("make clean", sh=True)
+    cmd.cmd("make clean", sh=True)
 
     chdir("/home/userx/git/SHook/client")
 
@@ -913,7 +903,7 @@ def jbase_4_2_2(args):
     nr_pmus = [1]
     nRuns = 1
 
-    cmd("make clean", sh=True)
+    cmd.cmd("make clean", sh=True)
 
     _cmd_wrapper = ["../tools/wrapper"]
     _cmd_stress = ["stress-ng", "--times"]
@@ -927,7 +917,7 @@ def jbase_4_2_2(args):
         for tracker in trackers:
 
             fOut.write("TRACKER " + tracker + "\n")
-            out, err, ret = cmd("make PLUGIN=" + plug + " TRACKER=" + tracker, sh=True)
+            out, err, ret = cmd.cmd("make PLUGIN=" + plug + " TRACKER=" + tracker, sh=True)
 
             print(err)
             for freq in frequencies:
@@ -935,8 +925,8 @@ def jbase_4_2_2(args):
 
                 for pmu in nr_pmus:
                     fOut.write("PMU " + str(pmu) + "\n")
-                    cmd("make unload", sh=True)
-                    out, err, ret = cmd(
+                    cmd.cmd("make unload", sh=True)
+                    out, err, ret = cmd.cmd(
                         'make load PARAMS="readable_pmcs='
                         + str(pmu)
                         + " reset_period="
@@ -972,7 +962,7 @@ def jbase_4_2_2(args):
 
                     fOut.flush()
 
-    cmd("make unload", sh=True)
+    cmd.cmd("make unload", sh=True)
     fOut.close()
 
 
@@ -1022,7 +1012,7 @@ def jbase_4_3_1(args):
                     if cl == "NBLIST" and buffer != "CPU":
                         continue
 
-                    out, err, ret = cmd(
+                    out, err, ret = cmd.cmd(
                         "make PLUGIN="
                         + plug
                         + " TRACKER="
@@ -1045,8 +1035,8 @@ def jbase_4_3_1(args):
 
                         for pmu in nr_pmus:
                             fOut.write("PMU " + str(pmu) + "\n")
-                            cmd("make unload", sh=True)
-                            cmd(
+                            cmd.cmd("make unload", sh=True)
+                            cmd.cmd(
                                 'make load PARAMS="readable_pmcs='
                                 + str(pmu)
                                 + " reset_period="
@@ -1086,7 +1076,7 @@ def jbase_4_3_1(args):
 
                             fOut.flush()
 
-    cmd("make unload", sh=True)
+    cmd.cmd("make unload", sh=True)
     fOut.close()
 
 
@@ -1177,9 +1167,9 @@ def jbase_4_4_1(args):
 
     _cmd_reader = ["../tools/reader"]
 
-    # cmd("make unload", sh=True)
-    cmd("make", sh=True)
-    cmd("make load", sh=True)
+    # cmd.cmd("make unload", sh=True)
+    cmd.cmd("make", sh=True)
+    cmd.cmd("make load", sh=True)
 
     for type in types:
         fOut.write("TYPE " + type + "\n")
@@ -1200,7 +1190,7 @@ def jbase_4_4_1(args):
 
                 fOut.flush()
 
-    # cmd("make unload", sh=True)
+    # cmd.cmd("make unload", sh=True)
     fOut.close()
 
 

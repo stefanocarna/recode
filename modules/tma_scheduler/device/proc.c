@@ -8,8 +8,21 @@ int rf_after_proc_init(void)
 	if (err)
 		goto err;
 
+	err = register_proc_scheduler();
+	if (err)
+		goto err;
+
+	err = register_proc_histograms();
+	if (err)
+		goto err;
+
 	err = register_proc_csched();
-	goto err;
+	if (err)
+		goto err;
+
+	err = register_proc_apps();
+	if (err)
+		goto err;
 
 	return 0;
 err:

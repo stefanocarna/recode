@@ -1,7 +1,4 @@
-from email.policy import default
 import os
-import json
-from color_printer import *
 import numpy as np
 import string
 import random
@@ -9,11 +6,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 import matplotlib.colors as mcolors
-from shell_cmd import * 
-
-import sys
-sys.path.append("...")
-import utils.base.app as app
+from utils.base import cmd
+from utils.base import app
 
 PLUGIN_NAME = "scheduler"
 HELP_DESC = "[cschedr] Access and manipulate collected data"
@@ -849,12 +843,12 @@ def store_data(name):
 
     path += "/" + str(max) + "/"
 
-    cmd(["mkdir", path])
+    cmd.cmd(["mkdir", path])
 
-    cmd("cat /proc/recode/groups > " + path + "groups", sh=True)
-    cmd("cat /proc/recode/csched > " + path + "csched", sh=True)
+    cmd.cmd("cat /proc/recode/groups > " + path + "groups", sh=True)
+    cmd.cmd("cat /proc/recode/csched > " + path + "csched", sh=True)
     if name:
-        cmd("echo " + name + " > " + path + "name", sh=True)
+        cmd.cmd("echo " + name + " > " + path + "name", sh=True)
 
 
 def validate_args(args):

@@ -83,18 +83,18 @@ def action_exec(args, profile=True):
 
     wrapper = "wrapper"
     if not isfile(wrapper):
-        # Compile Wrapper
+        # Compile Wrappersystem_w
         cmd("make")
 
     if timeout is not None and timeout < 0:
-        pr_warn("Invalid timeout (< 0). Ignore timeout")
+        ep.pr_warn("Invalid timeout (< 0). Ignore timeout")
         timeout = None
 
     _cmd = [app.globalConf.readPath("accessory") + "/" + wrapper] if profile else []
 
     if cpu is not None:
         if cpu < 0 or cpu >= cpu_count():
-            pr_warn("Invalid cpu " + str(cpu) + ". Ignore cpu mask")
+            ep.pr_warn("Invalid cpu " + str(cpu) + ". Ignore cpu mask")
 
         else:
             _cmd = ["taskset", "-c", str(cpu)] + _cmd
@@ -110,22 +110,22 @@ def action_exec(args, profile=True):
     if system_wide:
         action_state("system")
 
-        pr_info("[SYSTME_WIDE] Exec: " + str(_cmd))
+        ep.pr_info("[SYSTME_WIDE] Exec: " + str(_cmd))
         p = dcmd(_cmd)
         p.wait()
 
         action_state("off")
 
     else:
-        pr_info("Cwd: " + str(WD_PATH))
-        pr_info("Exec: " + str(_cmd) + " @ " + str(timeout))
+        ep.pr_info("Exec: " + str(_cmd) + " @ " + str(timeout))
         out, err, ret = cmd(_cmd, timeOut=timeout)
 
         if ret != 0:
-            pr_err("Execution failed with errcode " + str(ret) + ":")
-            pr_warn(" * " + str(err))
+            ep.pr_err("Execution failed with errcode " + str(ret) + ":")
+            ep.pr_warn(" * " + str(err))
         else:
-            pr_text("OUT pipe: " + out)
+            ep.pr_text("OUT pipe: " + out)
+            ep.pr_text("ERR pipe: " + err)
 
 
 def validate_args(args):

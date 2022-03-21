@@ -32,7 +32,9 @@ int recode_init_proc(void)
 	SUCCESS_OR_EXIT(recode_register_proc_cpus);
 	SUCCESS_OR_EXIT(recode_register_proc_processes);
 	SUCCESS_OR_EXIT(recode_register_proc_state);
+	SUCCESS_OR_EXIT(recode_register_proc_groups);
 
+	
 	if (rf_after_proc_init())
 		goto no_proc;
 

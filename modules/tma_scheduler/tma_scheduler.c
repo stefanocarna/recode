@@ -6,6 +6,8 @@
 
 #include "tma_scheduler.h"
 
+enum scheduler_state scheduler_state = SCHEDULER_OFF;
+
 void aggregate_tma_profile(struct tma_profile *proc_profile,
 			   struct tma_profile *group_profile)
 {
@@ -73,17 +75,50 @@ void rf_set_state_off(int old_state)
 
 void rf_set_state_system(int old_state)
 {
-	if (!nr_groups) {
-		pr_warn("Cannot enable Recode withoutr groups\n");
-	} else {
+	// if (!nr_groups) {
+	// 	pr_warn("Cannot enable Recode withoutr groups\n");
+	// } else {
 		pr_info("Recode ready for SYSTEM\n");
 		pmudrv_set_state(true);
 		enable_scheduler();
+	// }
+}
+
+int recode_set_scheduler(enum scheduler_state state)
+{
+	scheduler_state = state;
+
+	if (state != SCHEDULER_OFF && state != SCHEDULER_COLLECT && recode_state == OFF) {
+		pr_warn("Recode must be active to enable the scheduler\n");
+		return -EINVAL;
 	}
+
+	switch (state) {
+	case SCHEDULER_OFF:
+		disable_scheduler();
+		break;
+	case SCHEDULER_COLLECT:
+		break;
+	case SCHEDULER_DIRECT:
+		enable_scheduler();
+		break;
+	case SCHEDULER_DYNAMIC:
+	default:
+		/* TODO */
+		pr_info("Scheduler state %u to be implemented\n", state);
+		scheduler_state = SCHEDULER_OFF;
+	}
+
+	return 0;
 }
 
 /* TODO integrate into PoP */
 /* Register process to activity profiler  */
+int attach_app(struct task_struct *tsk, char *gname)
+{
+	return attach_process(tsk, gname);
+}
+
 int attach_process(struct task_struct *tsk, char *gname)
 {
 	int err = 0;
@@ -106,8 +141,8 @@ int attach_process(struct task_struct *tsk, char *gname)
 		goto no_register;
 
 	/* Suspend process here */
-	/* TODO Restore */
-	signal_to_group_by_id(SIGSTOP, group->id);
+	if (scheduler_state == SCHEDULER_COLLECT)
+		signal_to_group_by_id(SIGSTOP, group->id);
 
 	pr_info("Attaching process: [%u:%u]\n", tsk->tgid, tsk->pid);
 	return 0;

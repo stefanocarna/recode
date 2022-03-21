@@ -1,14 +1,8 @@
-from os import chdir, cpu_count, strerror, system
-from os.path import isfile, dirname, abspath
-import subprocess
-from shell_cmd import *
-from color_printer import *
 import random
-import time
-
-import sys
-sys.path.append("...")
-import utils.base.app as app
+from os import chdir, cpu_count
+from os.path import isfile
+from utils.base import cmd
+from utils.base import app
 
 PLUGIN_NAME = "vm"
 HELP_DESC = "Syntactic Sugar to execute available qemu instances"
@@ -124,19 +118,19 @@ def action_exec(args):
     wrapper = "sponsor"
     if not isfile(wrapper):
         # Compile Wrapper
-        cmd("make")
+        cmd.cmd("make")
 
     # _cmd_timeout = ["timeout", "-s", "SIGSTOP"]
     _cmd_wrapper = [app.globalConf.readPath("accesory") + "/" + wrapper]
 
-    cmd(["python", "tools/recode.py", "module", "-m", "tma_scheduler", "-c", "-l", "-u"])
+    cmd.cmd(["python", "tools/recode.py", "module", "-m", "tma_scheduler", "-c", "-l", "-u"])
 
     processList = []
     for sw in args.virtual_machines:
         stressName, stressWorkers = sw.split(":")
-        # processList.append(dcmd(_cmd_wrapper + [stressName] + get_qemu_cmd(stressName, stressWorkers)))
+        # processList.append(cmd.dcmd(_cmd_wrapper + [stressName] + get_qemu_cmd(stressName, stressWorkers)))
         processList.append(
-            dcmd(
+            cmd.dcmd(
                 # _cmd_timeout
                 # + [str(vmTimeout[stressName])]
                 _cmd_wrapper
@@ -147,13 +141,13 @@ def action_exec(args):
         # print(" ".join(get_qemu_cmd(stressName, stressWorkers)))
         # time.sleep(vmTimeout[stressName])
 
-    dcmd(["python", "tools/recode.py", "config", "-s", "system"])
+    cmd.dcmd(["python", "tools/recode.py", "config", "-s", "system"])
 
     for p in processList:
         if p is not None:
             p.wait()
 
-    # dcmd(["python", "tools/recode.py", "config", "-s", "off"])
+    # cmd.dcmd(["python", "tools/recode.py", "config", "-s", "off"])
 
 
 def action_random_exec(args):

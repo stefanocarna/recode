@@ -80,7 +80,7 @@ static void attuate_csched(void)
 	/* TODO Implement */
 	// pr_info("%s - (PARTS %u)\n", __func__, this_cphase_cs.nr_parts);
 	pr_info("**\n** ** PART %u ** **\n**\n", sched_conf.cphase_cs_i);
-	pr_info("CONSOLIDATION (# %u)\n", this_cphase_cs.nr_parts);
+	pr_info("ATTUATION (# %u)\n", this_cphase_cs.nr_parts);
 
 	pr_info("** AVG OCCUPANCY: %u",
 		this_cphase_cs.occupancy / this_cphase_cs.nr_parts);

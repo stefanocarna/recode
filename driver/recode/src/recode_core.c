@@ -19,6 +19,8 @@
 #include "recode.h"
 #include "recode_config.h"
 #include "recode_collector.h"
+#include "recode_memory.h"
+#include "recode_groups.h"
 
 /* TODO - create a module */
 
@@ -35,58 +37,90 @@ bool buffering_deep_state = true;
 __weak void rf_on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
 {
 	int cnt;
-	struct data_collector *dc;
-	struct data_collector_sample *dc_sample;
-	struct tma_collection *tma_collection;
+	int mem_size;
+	struct proc_entity *pentity;
+	struct stats_sample *ssample;
 
 	/* Nothing to do */
 	if (recode_state == OFF)
 		return;
 
-	if (buffering_state) {
-		dc = this_cpu_read(pcpu_data_collector);
+	// TODO @change to private_data access
+	pentity = get_proc_by_pid(current->pid);
+	if (!pentity)
+		return;
 
+	if (buffering_state) {
 		if (tma_enabled) {
 			cnt = this_cpu_read(pcpu_tma_collection)->cnt;
-			dc_sample = get_write_dc_sample(dc, 0, cnt);
+			mem_size = sizeof(struct stats_sample *) +
+				   array_size(sizeof(u64), cnt);
+			ssample = (struct stats_sample *)
+				get_from_memory_bulk_local(mem_size);
+
+			/* No Memory */
+			if (!ssample)
+				return;
+
+			ssample->cpu = cpu;
 
 			// pr_info("%lld\n", this_cpu_ptr(pcpu_tma_collection.metrics)[0]);
 			/* Copy raw pmc values */
 			/* TODO Fix control check */
-			memcpy(&dc_sample->tma,
+			memcpy(&ssample->tma,
 			       this_cpu_read(pcpu_tma_collection),
-			       sizeof(*tma_collection) +
+			       sizeof(struct tma_collection) +
 				       array_size(sizeof(u64), cnt));
+
+			ssample->tma_level =
+				this_cpu_read(pcpu_tma_collection)->level;
 		} else {
-			cnt = pmus_metadata->pmcs_collection->cnt;
-			dc_sample = get_write_dc_sample(dc, cnt, 0);
-			/* Copy raw pmc values */
-			memcpy(&dc_sample->pmcs, pmus_metadata->pmcs_collection,
-			       sizeof(dc_sample->pmcs) +
-				       array_size(sizeof(pmc_ctr), cnt));
+			/* UNSUPPORTED */
+
+			// cnt = pmus_metadata->pmcs_collection->cnt;
+			// mem_size = sizeof(*tma_collection) + array_size(sizeof(u64), cnt);
+			// dc_sample = (struct data_collector_sample*) get_from_memory_bulk_local(mem_size);
+
+			// dc_sample = get_write_dc_sample(dc, cnt, 0);
+			// /* Copy raw pmc values */
+			// memcpy(&dc_sample->pmcs, pmus_metadata->pmcs_collection,
+			//        sizeof(dc_sample->pmcs) +
+			// 	       array_size(sizeof(pmc_ctr), cnt));
+
+			// dc_sample->tma_level = -1;
 		}
 
 		if (buffering_deep_state) {
-			dc_sample->id = current->pid;
-			dc_sample->tracked = query_tracked(current);
-			dc_sample->k_thread = !current->mm;
+			// dc_sample->id = current->pid;
+			// dc_sample->tracked = query_tracked(current);
+			// dc_sample->k_thread = !current->mm;
 
 			// TODO make this consistent with TMA stop
-			dc_sample->tma_level = pmus_metadata->tma_level;
 
-			dc_sample->system_tsc = pmus_metadata->last_tsc;
-			dc_sample->tsc_cycles = pmus_metadata->sample_tsc;
+			ssample->system_tsc = pmus_metadata->last_tsc;
+			ssample->tsc_cycles = pmus_metadata->sample_tsc;
 			// dc_sample->core_cycles =
 			// 	pmcs_fixed(pmus_metadata->pmcs_collection->pmcs)[1];
 			// dc_sample->core_cycles_tsc_ref =
 			// 	pmcs_fixed(pmus_metadata->pmcs_collection->pmcs)[2];
 			// dc_sample->ctx_evts = pmus_metadata->ctx_evts;
 
-			get_task_comm(dc_sample->task_name, current);
+			// get_task_comm(dc_sample->task_name, current);
 		}
 
-		put_write_dc_sample(this_cpu_read(pcpu_data_collector));
+		// put_write_dc_sample(this_cpu_read(pcpu_data_collector));
 	}
+
+	// TODO Create a dedicated function
+	if (!pentity->stats.samples_tail) {
+		pentity->stats.samples_head = ssample;
+		pentity->stats.samples_tail = ssample;
+	} else {
+		pentity->stats.samples_tail->next = ssample;
+		pentity->stats.samples_tail = ssample;
+	}
+
+	pentity->stats.nr_samples++;
 
 	// if (query_tracked(current)) {
 	// 	atomic_inc(&tracked_pmi);
@@ -99,20 +133,26 @@ DEFINE_PER_CPU(struct data_logger *, pcpu_data_logger);
 
 int recode_data_init(void)
 {
-	unsigned cpu;
+	int cpu;
 
 	for_each_online_cpu(cpu) {
-		per_cpu(pcpu_data_collector, cpu) = init_collector(cpu);
-		if (!per_cpu(pcpu_data_collector, cpu))
+		per_cpu(pcpu_memory_bulk_manager, cpu) =
+			init_memory_bulk_menager(cpu);
+		if (!per_cpu(pcpu_memory_bulk_manager, cpu))
 			goto mem_err;
+
+		// per_cpu(pcpu_data_collector, cpu) = init_collector(cpu);
+		// if (!per_cpu(pcpu_data_collector, cpu))
+		// 	goto mem_err;
 	}
 
 	return 0;
 mem_err:
-	pr_info("failed to allocate percpu pcpu_pmc_buffer\n");
+	pr_info("failed to allocate pcpu_memory_bulk_manager\n");
 
 	while (--cpu)
-		fini_collector(cpu);
+		fini_memory_bulk_menager(cpu);
+	// fini_collector(cpu);
 
 	return -1;
 }
@@ -122,7 +162,8 @@ void recode_data_fini(void)
 	unsigned cpu;
 
 	for_each_online_cpu(cpu) {
-		fini_collector(cpu);
+		// fini_collector(cpu);
+		fini_memory_bulk_menager(cpu);
 	}
 }
 
@@ -273,7 +314,6 @@ __weak void detach_process(struct task_struct *tsk)
 	pr_info("Detaching process: [%u:%u]\n", tsk->tgid, tsk->pid);
 	untrack_thread(tsk);
 }
-
 
 // void setup_hw_events_from_proc(pmc_evt_code *hw_events_codes, unsigned cnt)
 // {

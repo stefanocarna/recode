@@ -1,12 +1,6 @@
-import os
 import requests
-from shell_cmd import *
-from color_printer import *
-from pathlib import Path
+from utils.base import color_printer as ep
 import json
-import sys
-sys.path.append("...")
-import utils.base.app as app
 
 
 PLUGIN_NAME = "network"
@@ -58,7 +52,7 @@ def setParserArguments(parser):
 def action_login(config, args):
 
     if (len(args) != 2):
-        pr_err("Required <username> and <password> to login.")
+        ep.pr_err("Required <username> and <password> to login.")
         return
 
     response = requests.post(
@@ -69,9 +63,9 @@ def action_login(config, args):
         responseJson = response.json()
         token = responseJson['token']
         config.update('token', token)
-        pr_succ("Login with success")
+        ep.pr_succ("Login with success")
     else:
-        pr_err("Login error..")
+        ep.pr_err("Login error..")
         print(response)
 
 
@@ -98,7 +92,7 @@ def action_test_connection(config):
 
 def action_send(config, args, type=None):
 
-    pr_info("Reading data from " + str(args))
+    ep.pr_info("Reading data from " + str(args))
 
     file = open(args)
     jsonData = json.load(file)
@@ -116,9 +110,9 @@ def action_send(config, args, type=None):
 
     # Success
     if (response.status_code == 201):
-        pr_succ("Upload done ")
+        ep.pr_succ("Upload done ")
     else:
-        pr_err("Upload error... (" + str(response) + ")")
+        ep.pr_err("Upload error... (" + str(response) + ")")
 
 
 def validate_args(args):

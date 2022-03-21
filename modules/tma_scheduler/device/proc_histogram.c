@@ -4,7 +4,7 @@
 
 /* Proc and Fops related to PMUDRV state */
 
-static void *groups_seq_start(struct seq_file *m, loff_t *pos)
+static void *histograms_seq_start(struct seq_file *m, loff_t *pos)
 {
 	loff_t *spos;
 
@@ -20,7 +20,7 @@ static void *groups_seq_start(struct seq_file *m, loff_t *pos)
 	return spos;
 }
 
-static void *groups_seq_next(struct seq_file *m, void *v, loff_t *pos)
+static void *histograms_seq_next(struct seq_file *m, void *v, loff_t *pos)
 {
 	loff_t *spos = v;
 	*pos = ++*spos;
@@ -31,10 +31,9 @@ static void *groups_seq_next(struct seq_file *m, void *v, loff_t *pos)
 	return spos;
 }
 
-static int groups_seq_show(struct seq_file *m, void *v)
+static int histograms_seq_show(struct seq_file *m, void *v)
 {
-	int k;
-	int nr_samples;
+	uint k;
 	loff_t *spos = v;
 
 	seq_printf(m, "ID %u\n", g_evaluations[*spos].id);
@@ -65,14 +64,15 @@ static int groups_seq_show(struct seq_file *m, void *v)
 
 	seq_puts(m, "METRICS\n");
 
-	nr_samples = atomic_read(&g_evaluations[*spos].profile.nr_samples);
-
 #define X_TMA_LEVELS_FORMULAS(name, idx)                                       \
-	seq_printf(                                                            \
-		m, "%s %u\n", #name,                                           \
-		atomic_read(                                                   \
-			&g_evaluations[*spos].profile.histotrack_comp[idx]) /  \
-			nr_samples);
+	seq_puts(m, #name);                                                    \
+	for (k = 0; k < TRACK_PRECISION; ++k) {                                \
+		seq_printf(                                                    \
+			m, " %u",                                              \
+			atomic_read(                                           \
+				&g_evaluations[*spos].profile.histotrack[idx][k]));   \
+	}                                                                      \
+	seq_puts(m, "\n");
 
 	TMA_L3_FORMULAS
 #undef X_TMA_LEVELS_FORMULAS
@@ -80,42 +80,42 @@ static int groups_seq_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static void groups_seq_stop(struct seq_file *m, void *v)
+static void histograms_seq_stop(struct seq_file *m, void *v)
 {
 	kfree(v);
 }
 
-struct seq_operations groups_seq_ops = { .start = groups_seq_start,
-					 .next = groups_seq_next,
-					 .stop = groups_seq_stop,
-					 .show = groups_seq_show };
+struct seq_operations histograms_seq_ops = { .start = histograms_seq_start,
+					 .next = histograms_seq_next,
+					 .stop = histograms_seq_stop,
+					 .show = histograms_seq_show };
 
-int groups_open(struct inode *inode, struct file *file)
+int histograms_open(struct inode *inode, struct file *file)
 {
-	return seq_open(file, &groups_seq_ops);
+	return seq_open(file, &histograms_seq_ops);
 }
 
 #if KERNEL_VERSION(5, 6, 0) > LINUX_VERSION_CODE
-static const struct file_operations groups_proc_fops = {
+static const struct file_operations histograms_proc_fops = {
 	.owner = THIS_MODULE,
-	.open = groups_open,
+	.open = histograms_open,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 #else
-static const struct proc_ops groups_proc_fops = {
-	.proc_open = groups_open,
+static const struct proc_ops histograms_proc_fops = {
+	.proc_open = histograms_open,
 	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = seq_release,
 #endif
 };
 
-int register_proc_group(void)
+int register_proc_histograms(void)
 {
 	struct proc_dir_entry *dir;
 
-	dir = proc_create(GET_PATH("groups"), 0444, NULL, &groups_proc_fops);
+	dir = proc_create(GET_PATH("histograms"), 0444, NULL, &histograms_proc_fops);
 
 	return !dir;
 }

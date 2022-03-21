@@ -5,6 +5,7 @@
 
 #include "device/proc.h"
 #include "recode.h"
+#include "recode_groups.h"
 
 #ifdef TMA_MODULE_ON
 #include "logic/recode_tma.h"

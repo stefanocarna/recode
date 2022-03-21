@@ -128,11 +128,16 @@ void save_consolidation(void)
 	// score = this_cphase_cs.rapl.energy_package[0] * this_cphase_cs.retire * this_cphase_cs.occuoancy;
 	// score /= (this_cphase_cs.retire * 1000) + 1;
 
+	pr_info("CS RETIRE %u, CS PARTS %u\n", this_cphase_cs.retire,
+		this_cphase_cs.nr_parts);
+
 	csched_ev->occupancy =
 		this_cphase_cs.occupancy / this_cphase_cs.nr_parts;
 	csched_ev->retire = this_cphase_cs.retire / this_cphase_cs.nr_parts;
 	csched_ev->energy = this_cphase_cs.rapl.energy_package[0];
-	csched_ev->score = (csched_ev->energy * csched_ev->retire * csched_ev->occupancy) / 100;
+	csched_ev->score =
+		(csched_ev->energy * csched_ev->retire * csched_ev->occupancy) /
+		100;
 
 	cur_cs_evaluation++;
 }
@@ -150,6 +155,8 @@ static void consolidate_csched(void)
 	pr_info("** ENERGY: %llu", this_cphase_cs.rapl.energy_package[0]);
 	pr_info("** RETIRE: %u",
 		this_cphase_cs.retire / this_cphase_cs.nr_parts);
+
+	pr_info("** RETIRE ** : %u\n", this_cphase_cs.retire);
 
 	// score = this_cphase_cs.rapl.energy_package[0] << 7;
 	// score /= (this_cphase_cs.retire << 7) + 1;
@@ -169,8 +176,10 @@ static void consolidate_csched(void)
 int consolidate_next_partition(void)
 {
 	/* Check there are cscheds left */
-	if (this_cphase_complete())
+	if (this_cphase_complete()) {
+		pr_warn("this_cphase_complete\n");
 		return ERR_TICK;
+	}
 
 	/* Return true when the current CS ends */
 	if (stop_consolidation()) {

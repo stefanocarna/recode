@@ -5,7 +5,6 @@
 #include "logic/tma.h"
 
 
-
 void enable_scheduler(void);
 
 void disable_scheduler(void);
@@ -21,6 +20,23 @@ void aggregate_tma_profile(struct tma_profile *proc_profile,
 
 int register_proc_group(void);
 int register_proc_csched(void);
+int register_proc_histograms(void);
+int register_proc_apps(void);
+int register_proc_scheduler(void);
+
+extern int attach_app(struct task_struct *tsk, char *gname);
+
+enum scheduler_state {
+	SCHEDULER_OFF = 0,
+	SCHEDULER_COLLECT = 1,
+	SCHEDULER_DIRECT = 2,
+	SCHEDULER_DYNAMIC = 3,
+	SCHEDULER_MAX = 4,
+};
+
+extern enum scheduler_state scheduler_state;
+
+int recode_set_scheduler(enum scheduler_state state);
 
 struct group_evaluation {
 	uint id;
