@@ -30,12 +30,20 @@ def setParserArguments(parser):
     )
 
     plug_parser.add_argument(
-        "-tma",
-        "--tma",
+        "-tma-m",
+        "--tma-mode",
         type=str,
         required=False,
         choices=["fix", "dyn", "off"],
         help="Enable or disable TMA",
+    )
+
+    plug_parser.add_argument(
+        "-tma-l",
+        "--tma-level",
+        type=str,
+        required=False,
+        help="Set the maximum TMA level",
     )
 
     plug_parser.add_argument(
@@ -104,8 +112,8 @@ def action_state(action):
     _file.close()
 
 
-def action_tma(action):
-    path = app.globalConf.readPath("pmudrv_proc") + "/tma"
+def action_tma_mode(action):
+    path = app.globalConf.readPath("pmudrv_proc") + "/tma_mode"
 
     if action == "off":
         value = "0"
@@ -119,6 +127,16 @@ def action_tma(action):
 
     _file = open(path, "w")
     _file.write(value)
+    _file.close()
+
+
+def action_tma_level(action):
+    path = app.globalConf.readPath("pmudrv_proc") + "/tma_level"
+
+	# Should check the compile time value
+
+    _file = open(path, "w")
+    _file.write(action)
     _file.close()
 
 
@@ -219,8 +237,11 @@ def compute(args):
     if args.frequency:
         action_frequency(args.frequency)
 
-    if args.tma:
-        action_tma(args.tma)
+    if args.tma_mode:
+        action_tma_mode(args.tma_mode)
+
+    if args.tma_level:
+        action_tma_level(args.tma_level)
 
     if args.scheduler:
         action_scheduler(args.scheduler)
