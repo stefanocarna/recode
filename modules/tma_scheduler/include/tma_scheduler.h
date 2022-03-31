@@ -2,6 +2,7 @@
 
 #include "power.h"
 #include "recode.h"
+#include "recode_groups.h"
 #include "logic/tma.h"
 
 
@@ -90,9 +91,6 @@ struct group_step {
 
 // extern struct group_step *gsteps;
 // extern uint nr_gsteps;
-
-void read_cpu_stats(u64 *used, u64 *total);
-
 
 /* Scheduler */
 struct sched_stats {

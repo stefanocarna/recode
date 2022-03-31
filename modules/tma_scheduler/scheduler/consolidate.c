@@ -1,4 +1,6 @@
 #include "scheduler.h"
+#include "system/stats.h"
+
 #include <linux/slab.h>
 
 int start_consolidation(void)
@@ -68,8 +70,10 @@ static bool stop_consolidation(void)
 
 		profile = group->data;
 
-		retire += atomic_read(&profile->histotrack_comp[2]);
-		nr_samples += atomic_read(&profile->nr_samples);
+		// retire += atomic_read(&profile->histotrack_comp[2]);
+		// nr_samples += atomic_read(&profile->nr_samples);
+		retire += atomic_read(&group->stats.retire);
+		nr_samples += atomic_read(&group->stats.retire_counter);
 	}
 
 	/* Compute occupancy % */

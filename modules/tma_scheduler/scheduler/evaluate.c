@@ -1,4 +1,6 @@
 #include "scheduler.h"
+#include "system/stats.h"
+
 
 void start_evaluation(void)
 {

@@ -1,4 +1,5 @@
 #include "scheduler.h"
+#include "system/stats.h"
 
 int start_attuation(void)
 {
