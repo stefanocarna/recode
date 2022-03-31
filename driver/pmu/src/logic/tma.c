@@ -274,14 +274,15 @@ struct tma_level {
 	struct hw_events *hw_events;
 };
 
-#define TMA_MAX_LEVEL 4
-struct tma_level gbl_tma_levels[TMA_MAX_LEVEL];
+struct tma_level gbl_tma_levels[DEFAULT_TMA_MAX_LEVEL];
 
 bool tma_enabled;
 EXPORT_SYMBOL(tma_enabled);
 
 DEFINE_PER_CPU(struct tma_collection *, pcpu_tma_collection);
 EXPORT_PER_CPU_SYMBOL(pcpu_tma_collection);
+
+int tma_max_level = DEFAULT_TMA_MAX_LEVEL - 1;
 
 /* This function returns the TMA values for the installed level */
 void tma_on_pmi_callback_local() //, struct pmus_metadata *pmus_metadata)
@@ -434,7 +435,7 @@ int tma_init(void)
 	gbl_tma_levels[3].prev = 1;
 	gbl_tma_levels[3].compute = compute_tms_l3;
 
-	for (k = 0; k < TMA_MAX_LEVEL; ++k) {
+	for (k = 0; k < DEFAULT_TMA_MAX_LEVEL; ++k) {
 		pr_info("Request event creation (cnt %u)\n",
 			gbl_tma_levels[k].hw_cnt);
 
@@ -519,17 +520,19 @@ void tma_fini(void)
 {
 	uint k;
 
-	disable_tma();
+	tma_enabled = false;
 
-	for (k = 0; k < TMA_MAX_LEVEL; ++k)
+	for (k = 0; k < DEFAULT_TMA_MAX_LEVEL; ++k)
 		destroy_hw_events(gbl_tma_levels[k].hw_events);
+
+	tma_enabled = true;
 }
 
 static __always_inline void switch_tma_level(uint prev_level, uint next_level)
 {
 	pr_debug("SWITCHING from %u to %u level\n", prev_level, next_level);
 
-	if (prev_level == next_level)
+	if (prev_level == next_level || next_level > tma_max_level)
 		return;
 
 	/* TODO - This must be atomic */
@@ -538,6 +541,24 @@ static __always_inline void switch_tma_level(uint prev_level, uint next_level)
 	this_cpu_write(pcpu_pmus_metadata.tma_level, next_level);
 	setup_hw_events_local(gbl_tma_levels[next_level].hw_events);
 }
+
+static void reset_tma_level_smp(void *dummy)
+{
+	int level = this_cpu_read(pcpu_tma_collection)->level;
+	switch_tma_level(level, 0);
+}
+
+/* This should be changed into enum */
+void pmudrv_set_tma_max_level(int tma_level)
+{
+	disable_tma();
+
+	tma_max_level = tma_level;
+	pr_info("TMA max level set to %u\n", tma_max_level);
+
+	on_each_cpu(reset_tma_level_smp, NULL, 1);
+}
+EXPORT_SYMBOL(pmudrv_set_tma_max_level);
 
 /* TODO Restore */
 static void compute_level_switch(int level, struct pmcs_collection *collection)

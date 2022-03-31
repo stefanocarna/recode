@@ -46,6 +46,9 @@ struct tma_collection {
 	u64 metrics[];
 };
 
+#define DEFAULT_TMA_MAX_LEVEL 4
+extern int tma_max_level;
+
 #define TRACK_DOMAIN 100
 #define TRACK_PRECISION 100
 #define TRACK_DIV (TRACK_DOMAIN / TRACK_PRECISION)
@@ -74,6 +77,8 @@ void update_events_index_local(struct hw_events *events);
 void tma_on_pmi_callback_local(void);
 
 void pmudrv_set_tma(int tma_mode);
+
+void pmudrv_set_tma_max_level(int tma_level);
 
 void compute_tma(struct pmcs_collection *pmu_collection,
 		 struct tma_collection *tma_collection);
