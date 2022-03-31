@@ -149,7 +149,7 @@ static int insert_process_to_processes_map(struct proc_entity *pentity)
 	hash_add(proc_map, &pnode->node, pnode->key);
 	spin_unlock_irqrestore(&p_lock, flags);
 
-	pr_debug("[P] Add #p %u @g %u (%u)\n", pentity->pid, pentity->group->id,
+	pr_info("[P] Add #p %u @g %u (%u)\n", pentity->pid, pentity->group->id,
 		 pentity->group->nr_processes);
 
 	return 0;

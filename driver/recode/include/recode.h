@@ -73,6 +73,7 @@ struct process_stats {
 
 	// Struct to collect pmcs data
 	int nr_samples;
+	int retire;
 	struct stats_sample *samples_head;
 	struct stats_sample *samples_tail;
 };
@@ -81,7 +82,11 @@ struct process_stats {
 struct group_stats {
 
 	// CPU time - Sum of the processes' time
-	unsigned long cpu_time;
+	atomic_t cpu_time;
+
+	// TMA Retirement - if present
+	atomic_t retire;
+	atomic_t retire_counter;
 
 	// Power Comnsumption
 	unsigned long power;

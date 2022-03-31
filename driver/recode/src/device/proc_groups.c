@@ -5,6 +5,7 @@
 #include "recode_config.h"
 #include "recode_collector.h"
 #include "recode_groups.h"
+#include "recode_memory.h"
 
 static struct proc_dir_entry *dir;
 
@@ -25,12 +26,30 @@ static int gstats_seq_show(struct seq_file *m, void *v)
 {
 	int nr_samples = 0;
 	unsigned long flags;
+	struct stats_sample *n;
 	struct group_entity *gentity = m->private;
 
 	struct proc_list *cur;
 
 	spin_lock_irqsave(&gentity->lock, flags);
 	list_for_each_entry(cur, &gentity->p_list, list) {
+		n = cur->proc->stats.samples_head;
+
+		while (n) {
+			seq_printf(m, "%u,", cur->proc->pid);
+			seq_printf(m, "%u,", n->cpu);
+			seq_printf(m, "%llu,", n->system_tsc);
+			seq_printf(m, "%llu,", n->tsc_cycles);
+			seq_printf(m, "%llu,", n->tma.metrics[0]);
+			seq_printf(m, "%llu,", n->tma.metrics[1]);
+			seq_printf(m, "%llu,", n->tma.metrics[2]);
+			seq_printf(m, "%llu\n", n->tma.metrics[3]);
+
+			n = n->next;
+		}
+
+		pr_info("Proc %u: %u\n", cur->proc->pid,
+			cur->proc->stats.nr_samples);
 		nr_samples += cur->proc->stats.nr_samples;
 	}
 	spin_unlock_irqrestore(&gentity->lock, flags);
@@ -38,6 +57,123 @@ static int gstats_seq_show(struct seq_file *m, void *v)
 	seq_printf(m, "%d\n", nr_samples);
 	return 0;
 }
+
+// static void *gstats_seq_start(struct seq_file *m, loff_t *pos)
+// {
+// 	// unsigned pmc;
+// 	struct group_entity *gentity = PDE_DATA(file_inode(m->file));
+
+// 	uint *cpu = (uint *)PDE_DATA(file_inode(m->file));
+// 	struct data_collector *dc = per_cpu(pcpu_data_collector, *cpu);
+
+// 	if (!dc)
+// 		goto no_data;
+
+// 	if (!check_read_dc_sample(dc))
+// 		goto no_data;
+
+// 	return pos;
+
+// no_data:
+// 	return NULL;
+// }
+
+// static void *gstats_seq_next(struct seq_file *m, void *v, loff_t *pos)
+// {
+// 	uint *cpu = (uint *)PDE_DATA(file_inode(m->file));
+// 	struct data_collector *dc = per_cpu(pcpu_data_collector, *cpu);
+
+// 	(*pos)++;
+
+// 	if (!check_read_dc_sample(dc))
+// 		goto err;
+
+// 	return pos;
+// err:
+// 	return NULL;
+// }
+
+// static int gstats_seq_show(struct seq_file *m, void *v)
+// {
+// 	u64 time;
+// 	uint k;
+// 	struct data_collector_sample *dc_sample;
+
+// 	uint *cpu = (uint *)PDE_DATA(file_inode(m->file));
+// 	struct data_collector *dc = per_cpu(pcpu_data_collector, *cpu);
+
+// 	if (!v || !dc)
+// 		goto err;
+
+// 	dc_sample = get_read_dc_sample(dc);
+
+// 	if (!dc_sample)
+// 		goto err;
+
+// 	// pmcs = &sample->pmcs;
+// 	// time = pmcs->tsc / tsc_khz;
+// 	time = 0;
+
+// 	// seq_printf(m, " %u |", dc_sample->id);
+// 	// seq_printf(m, " %u ", dc_sample->tracked);
+// 	// seq_printf(m, "- %u |", dc_sample->k_thread);
+// 	// seq_printf(m, " %llu |", dc_sample->system_tsc);
+// 	// seq_printf(m, " %llu ", dc_sample->tsc_cycles);
+// 	// seq_printf(m, " %llu ", dc_sample->core_cycles);
+// 	// seq_printf(m, "- %llu |", dc_sample->core_cycles_tsc_ref);
+
+// 	// // seq_printf(m, "- %u |", dc_sample->ctx_evts);
+
+// 	// seq_printf(m, " [%llx] - ", dc_sample->pmcs.mask);
+
+// 	seq_printf(m, "%u,", dc_sample->id);
+// 	seq_printf(m, "%s,", dc_sample->task_name);
+// 	seq_printf(m, "%u,", dc_sample->tracked);
+// 	seq_printf(m, "%u,", dc_sample->k_thread);
+// 	seq_printf(m, "%llu,", dc_sample->system_tsc);
+// 	seq_printf(m, "%llu,", dc_sample->tsc_cycles);
+// 	seq_printf(m, "%llu,", dc_sample->core_cycles);
+// 	seq_printf(m, "%llu,", dc_sample->core_cycles_tsc_ref);
+
+// 	// seq_printf(m, "- %u |", dc_sample->ctx_evts);
+
+// 	// seq_printf(m, "%llx", dc_sample->pmcs.mask);
+// 	seq_printf(m, "%d", dc_sample->tma_level);
+
+// 	/* TODO Enable the combination */
+// 	if (dc_sample->tma.cnt) {
+// 		for (k = 0; k < dc_sample->tma.cnt; ++k)
+// 			seq_printf(m, ",%llu", dc_sample->tma.metrics[k]);
+// 	} else {
+// 		for (k = 0; k < dc_sample->pmcs.cnt; ++k)
+// 			seq_printf(m, ",%llu", dc_sample->pmcs.pmcs[k]);
+// 	}
+
+// 	put_read_dc_sample(dc);
+
+// 	seq_puts(m, "\n");
+
+// 	return 0;
+// err:
+// 	return -1;
+// }
+
+// static void gstats_seq_stop(struct seq_file *m, void *v)
+// {
+// 	/* Nothing to free */
+// }
+
+// static struct seq_operations gstats_seq_ops = {
+// 	.start = gstats_seq_start,
+// 	.next = gstats_seq_next,
+// 	.stop = gstats_seq_stop,
+// 	.show = gstats_seq_show
+// };
+
+// static int gstats_open(struct inode *inode, struct file *filp)
+// {
+// 	return seq_open(filp, &gstats_seq_ops);
+// }
 
 static int gstats_open(struct inode *inode, struct file *filp)
 {

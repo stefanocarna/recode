@@ -34,6 +34,99 @@
 bool buffering_state = true;
 bool buffering_deep_state = true;
 
+// __weak void rf_on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
+// {
+// 	int cnt;
+// 	int mem_size;
+// 	struct proc_entity *pentity;
+// 	struct stats_sample *ssample;
+
+// 	/* Nothing to do */
+// 	if (recode_state == OFF)
+// 		return;
+
+// 	// TODO @change to private_data access
+// 	pentity = get_proc_by_pid(current->pid);
+// 	if (!pentity)
+// 		return;
+
+// 	if (buffering_state) {
+// 		if (tma_enabled) {
+// 			cnt = this_cpu_read(pcpu_tma_collection)->cnt;
+// 			mem_size = sizeof(struct stats_sample *) +
+// 				   array_size(sizeof(u64), cnt);
+// 			ssample = (struct stats_sample *)
+// 				get_from_memory_bulk_local(mem_size);
+
+// 			/* No Memory */
+// 			if (!ssample)
+// 				return;
+
+// 			ssample->cpu = cpu;
+
+// 			// pr_info("%lld\n", this_cpu_ptr(pcpu_tma_collection.metrics)[0]);
+// 			/* Copy raw pmc values */
+// 			/* TODO Fix control check */
+// 			memcpy(&ssample->tma,
+// 			       this_cpu_read(pcpu_tma_collection),
+// 			       sizeof(struct tma_collection) +
+// 				       array_size(sizeof(u64), cnt));
+
+// 			ssample->tma_level =
+// 				this_cpu_read(pcpu_tma_collection)->level;
+// 		} else {
+// 			/* UNSUPPORTED */
+
+// 			// cnt = pmus_metadata->pmcs_collection->cnt;
+// 			// mem_size = sizeof(*tma_collection) + array_size(sizeof(u64), cnt);
+// 			// dc_sample = (struct data_collector_sample*) get_from_memory_bulk_local(mem_size);
+
+// 			// dc_sample = get_write_dc_sample(dc, cnt, 0);
+// 			// /* Copy raw pmc values */
+// 			// memcpy(&dc_sample->pmcs, pmus_metadata->pmcs_collection,
+// 			//        sizeof(dc_sample->pmcs) +
+// 			// 	       array_size(sizeof(pmc_ctr), cnt));
+
+// 			// dc_sample->tma_level = -1;
+// 		}
+
+// 		if (buffering_deep_state) {
+// 			// dc_sample->id = current->pid;
+// 			// dc_sample->tracked = query_tracked(current);
+// 			// dc_sample->k_thread = !current->mm;
+
+// 			// TODO make this consistent with TMA stop
+
+// 			ssample->system_tsc = pmus_metadata->last_tsc;
+// 			ssample->tsc_cycles = pmus_metadata->sample_tsc;
+// 			// dc_sample->core_cycles =
+// 			// 	pmcs_fixed(pmus_metadata->pmcs_collection->pmcs)[1];
+// 			// dc_sample->core_cycles_tsc_ref =
+// 			// 	pmcs_fixed(pmus_metadata->pmcs_collection->pmcs)[2];
+// 			// dc_sample->ctx_evts = pmus_metadata->ctx_evts;
+
+// 			// get_task_comm(dc_sample->task_name, current);
+// 		}
+
+// 		// put_write_dc_sample(this_cpu_read(pcpu_data_collector));
+// 	}
+
+// 	// TODO Create a dedicated function
+// 	if (!pentity->stats.samples_tail) {
+// 		pentity->stats.samples_head = ssample;
+// 		pentity->stats.samples_tail = ssample;
+// 	} else {
+// 		pentity->stats.samples_tail->next = ssample;
+// 		pentity->stats.samples_tail = ssample;
+// 	}
+
+// 	pentity->stats.nr_samples++;
+
+// 	// if (query_tracked(current)) {
+// 	// 	atomic_inc(&tracked_pmi);
+// 	// }
+// }
+
 __weak void rf_on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
 {
 	int cnt;
@@ -74,6 +167,12 @@ __weak void rf_on_pmi_callback(uint cpu, struct pmus_metadata *pmus_metadata)
 
 			ssample->tma_level =
 				this_cpu_read(pcpu_tma_collection)->level;
+
+			atomic_add(&pentity->group->stats.retire,
+				   ssample->tma.metrics[2]);
+			atomic_inc(&pentity->group->stats.retire_counter);
+
+			pentity->stats.retire += ssample->tma.metrics[2];
 		} else {
 			/* UNSUPPORTED */
 

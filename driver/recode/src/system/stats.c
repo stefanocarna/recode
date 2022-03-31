@@ -1,7 +1,6 @@
 #include <linux/kernel_stat.h>
 
-#include "pmu_abi.h"
-#include "tma_scheduler.h"
+#include "system/stats.h"
 
 void read_cpu_stats(u64 *used, u64 *total)
 {

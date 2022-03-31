@@ -38,7 +38,7 @@ DEVICE_DIR 	:= device
 DEVICE_SOURCES 	:= $(wildcard $(DEVICE_DIR)/*.c)
 DEVICE_OBJECTS 	:= $(DEVICE_SOURCES:%.c=%.o)
 
-# $(MODULE_NAME)-m += $(DEVICE_OBJECTS)
+# $(MODULE_NAME)-m += $(DEVproc_stateICE_OBJECTS)
 
 $(MODULE_NAME)-m += device/proc.o
 $(MODULE_NAME)-m += device/proc_cpus.o
@@ -47,5 +47,7 @@ $(MODULE_NAME)-m += device/proc_cpus.o
 $(MODULE_NAME)-m += device/proc_processes.o
 $(MODULE_NAME)-m += device/proc_groups.o
 $(MODULE_NAME)-m += device/proc_state.o
+
+$(MODULE_NAME)-m += system/stats.o
 
 obj-m := $(MODULE_NAME).o

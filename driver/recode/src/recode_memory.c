@@ -19,6 +19,7 @@ struct memory_bulk_manager *init_memory_bulk_menager(uint cpu)
 
 	mbm->cpu = cpu;
 	mbm->cur = mbm->head;
+	mbm->cur->free = BULK_MEMORY_SIZE;
 	mbm->cur->size = BULK_MEMORY_SIZE;
 
 	return mbm;
@@ -30,7 +31,11 @@ err:
 
 void fini_memory_bulk_menager(uint cpu)
 {
-	vfree(per_cpu(pcpu_memory_bulk_manager, cpu));
+	struct memory_bulk_manager *mbm =
+		per_cpu(pcpu_memory_bulk_manager, cpu);
+
+	vfree(mbm->head);
+	vfree(mbm);
 }
 
 u8 *get_from_memory_bulk_local(size_t amount)

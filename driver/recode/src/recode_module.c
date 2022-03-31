@@ -94,6 +94,8 @@ static void __exit recode_exit(void)
 // 	recode_security_init();
 // #endif
 
+	recode_set_state(OFF);
+
 	pmudrv_set_state(false);
 
 	rf_before_module_fini();
